@@ -15,7 +15,7 @@ class AppendFlowWriter:
     """Append Flow Writer class."""
 
     def __init__(self, spark, append_flow, target, struct_schema, table_properties=None,
-                 partition_cols=None, cluster_by=None):
+                 partition_cols=None, cluster_by=None, cluster_by_auto=False):
         """Init."""
         self.spark = spark
         self.target = target
@@ -24,6 +24,7 @@ class AppendFlowWriter:
         self.table_properties = table_properties
         self.partition_cols = partition_cols
         self.cluster_by = cluster_by
+        self.cluster_by_auto = cluster_by_auto
 
     def read_af_view(self):
         """Write to Delta."""
@@ -32,11 +33,15 @@ class AppendFlowWriter:
     def write_flow(self):
         """Write Append Flow."""
         if self.append_flow.create_streaming_table:
+            # Default cluster_by_auto to False if None
+            cluster_by_auto = self.cluster_by_auto if self.cluster_by_auto is not None else False
+
             dlt.create_streaming_table(
                 name=self.target,
                 table_properties=self.table_properties,
                 partition_cols=DataflowSpecUtils.get_partition_cols(self.partition_cols),
                 cluster_by=DataflowSpecUtils.get_partition_cols(self.cluster_by),
+                cluster_by_auto=cluster_by_auto,
                 schema=self.struct_schema,
                 expect_all=None,
                 expect_all_or_drop=None,

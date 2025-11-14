@@ -20,7 +20,7 @@
          "cloudFiles.rescuedDataColumn": "_rescued_data",
          "header": "true"
       },
-      "bronze_cluster_by":["dob"],
+      "bronze_cluster_by_auto": true,
       "bronze_data_quality_expectations_json_prod": "{uc_volume_path}/demo/conf/dqe/customers.json",
       "bronze_catalog_quarantine_prod": "{uc_catalog_name}",
       "bronze_database_quarantine_prod": "{bronze_schema}",
@@ -28,6 +28,7 @@
       "bronze_quarantine_table_comment": "customers quarantine table",
       "bronze_quarantine_table_path_prod": "{uc_volume_path}/data/bronze/customers_quarantine",
       "bronze_quarantine_table_cluster_by": ["dob"],
+      "bronze_quarantine_table_cluster_by_auto": "true",
       "silver_catalog_prod": "{uc_catalog_name}",
       "silver_database_prod": "{silver_schema}",
       "silver_table": "customers",
@@ -46,7 +47,8 @@
             "_rescued_data"
          ]
       },
-      "silver_cluster_by":["customer_id"],
+      "silver_cluster_by":["dob"],
+      "silver_cluster_by_auto": true,
       "silver_transformation_json_prod": "{uc_volume_path}/demo/conf/silver_transformations.json",
       "silver_data_quality_expectations_json_prod": "{uc_volume_path}/demo/conf/dqe/customers_silver_dqe.json"
 
@@ -73,17 +75,19 @@
          "header": "true"
       },
       "bronze_cluster_by":["transaction_date"],
+      "bronze_cluster_by_auto": true,
       "bronze_data_quality_expectations_json_prod": "{uc_volume_path}/demo/conf/dqe/transactions.json",
       "bronze_database_quarantine_prod": "{uc_catalog_name}.{bronze_schema}",
       "bronze_quarantine_table": "transactions_quarantine",
       "bronze_quarantine_table_comment": "transactions bronze quarantine table",
       "bronze_quarantine_table_path_prod": "{uc_volume_path}/demo/resources/data/bronze/transactions_quarantine",
       "bronze_quarantine_table_cluster_by": ["transaction_date"],
+      "bronze_quarantine_table_cluster_by_auto": "true",
       "silver_catalog_prod": "{uc_catalog_name}",
       "silver_database_prod": "{silver_schema}",
       "silver_table": "transactions",
       "silver_table_comment": "transactions silver table",
-      "silver_table_path_prod": "{uc_volume_path}/data/silver/transactions",
+      "silver_table_path_prod": "{uc_volume_path}/demo/resources/data/silver/transactions",
       "silver_cdc_apply_changes": {
          "keys": [
             "transaction_id"
@@ -97,8 +101,7 @@
             "_rescued_data"
          ]
       },
-      "silver_cluster_by":["transaction_date"],
-      "silver_table_path_prod": "{uc_volume_path}/demo/resources/data/silver/transactions",
+      "silver_cluster_by_auto": "true",
       "silver_transformation_json_prod": "{uc_volume_path}/demo/conf/silver_transformations.json",
       "silver_data_quality_expectations_json_prod": "{uc_volume_path}/demo/conf/dqe/transactions_silver_dqe.json"
    },
@@ -117,24 +120,25 @@
       "bronze_database_prod": "{bronze_schema}",
       "bronze_table": "products",
       "bronze_table_comment": "products bronze table",
-      "bronze_table_path_prod": "{uc_volume_path}/data/bronze/products",
+      "bronze_table_path_prod": "{uc_volume_path}/demo/resources/data/bronze/products",
       "bronze_reader_options": {
          "cloudFiles.format": "csv",
          "cloudFiles.rescuedDataColumn": "_rescued_data",
          "header": "true"
       },
-      "bronze_table_path_prod": "{uc_volume_path}/demo/resources/data/bronze/products",
+      "bronze_cluster_by_auto": true,
       "bronze_data_quality_expectations_json_prod": "{uc_volume_path}/demo/conf/dqe/products.json",
       "bronze_database_quarantine_prod": "{uc_catalog_name}.{bronze_schema}",
       "bronze_quarantine_table": "products_quarantine",
       "bronze_quarantine_table_comment": "products quarantine bronze table",
       "bronze_quarantine_table_path_prod": "{uc_volume_path}/demo/resources/data/bronze/products_quarantine",
       "bronze_quarantine_table_cluster_by": ["product_id"],
+      "bronze_quarantine_table_cluster_by_auto": "true",
       "silver_catalog_prod": "{uc_catalog_name}",
       "silver_database_prod": "{silver_schema}",
       "silver_table": "products",
       "silver_table_comment": "products silver table",
-      "silver_table_path_prod": "{uc_volume_path}/data/silver/products",
+      "silver_table_path_prod": "{uc_volume_path}/demo/resources/data/silver/products",
       "silver_cdc_apply_changes": {
          "keys": [
             "product_id"
@@ -148,7 +152,7 @@
             "_rescued_data"
          ]
       },
-      "silver_table_path_prod": "{uc_volume_path}/demo/resources/data/silver/products",
+      "silver_cluster_by_auto": "true",
       "silver_transformation_json_prod": "{uc_volume_path}/demo/conf/silver_transformations.json",
       "silver_data_quality_expectations_json_prod": "{uc_volume_path}/demo/conf/dqe/products_silver_dqe.json"
    },
@@ -167,13 +171,12 @@
       "bronze_database_prod": "{bronze_schema}",
       "bronze_table": "stores",
       "bronze_table_comment": "stores bronze table",
-      "bronze_table_path_prod": "{uc_volume_path}/data/bronze/stores",
+      "bronze_table_path_prod": "{uc_volume_path}/demo/resources/data/bronze/stores",
       "bronze_reader_options": {
          "cloudFiles.format": "csv",
          "cloudFiles.rescuedDataColumn": "_rescued_data",
          "header": "true"
       },
-      "bronze_table_path_prod": "{uc_volume_path}/demo/resources/data/bronze/stores",
       "bronze_data_quality_expectations_json_prod": "{uc_volume_path}/demo/conf/dqe/stores.json",
       "bronze_catalog_quarantine_prod": "{uc_catalog_name}",
       "bronze_database_quarantine_prod": "{bronze_schema}",
@@ -185,7 +188,7 @@
       "silver_database_prod": "{silver_schema}",
       "silver_table": "stores",
       "silver_table_comment": "stores silver table",
-      "silver_table_path_prod": "{uc_volume_path}/data/silver/stores",
+      "silver_table_path_prod": "{uc_volume_path}/demo/resources/data/silver/stores",
       "silver_cdc_apply_changes": {
          "keys": [
             "store_id"
@@ -199,7 +202,6 @@
             "_rescued_data"
          ]
       },
-      "silver_table_path_prod": "{uc_volume_path}/demo/resources/data/silver/stores",
       "silver_transformation_json_prod": "{uc_volume_path}/demo/conf/silver_transformations.json",
       "silver_data_quality_expectations_json_prod": "{uc_volume_path}/demo/conf/dqe/stores_silver_dqe.json"
    }

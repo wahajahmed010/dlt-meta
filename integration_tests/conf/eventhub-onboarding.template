@@ -26,11 +26,13 @@
         "bronze_database_it": "{bronze_schema}",
         "bronze_table": "bronze_{run_id}_iot",
         "bronze_partition_columns": "date",
+        "bronze_cluster_by_auto": true,
         "bronze_data_quality_expectations_json_it": "{uc_volume_path}/integration_tests/conf/dqe/iot/bronze_data_quality_expectations.json",
         "bronze_catalog_quarantine_it": "{uc_catalog_name}",
         "bronze_database_quarantine_it": "{bronze_schema}",
         "bronze_quarantine_table": "bronze_{run_id}_iot_quarantine",
         "bronze_quarantine_table_path_it": "{uc_volume_path}/data/bronze/iot_quarantine",
+        "bronze_quarantine_table_cluster_by_auto": true,
         "bronze_sinks": [
             {
                 "name": "bronze_eventhub_sink",

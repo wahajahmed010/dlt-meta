@@ -28,7 +28,8 @@
    "bronze_table_properties": {
          "pipelines.autoOptimize.managed": "true"
    },
-   "bronze_cluster_by":["id", "email"],    
+   "bronze_cluster_by":["id", "email"],
+   "bronze_cluster_by_auto": true,
    "bronze_data_quality_expectations_json_it": "{uc_volume_path}/integration_tests/conf/dqe/customers/bronze_data_quality_expectations.json",
    "bronze_catalog_quarantine_it": "{uc_catalog_name}",
    "bronze_database_quarantine_it": "{bronze_schema}",
@@ -37,6 +38,7 @@
    "bronze_quarantine_table_properties": {
          "pipelines.reset.allowed": "false"
    },
-   "bronze_quarantine_table_cluster_by":["id", "email"]
+   "bronze_quarantine_table_cluster_by":["id", "email"],
+   "bronze_quarantine_table_cluster_by_auto": true
 }
 ]

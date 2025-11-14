@@ -786,3 +786,181 @@ class OnboardDataflowspecTests(DLTFrameworkTestCase):
         cluster_by = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_properties(
             onboarding_row, onboarding_row['bronze_table_properties'], "bronze_cluster_by")
         self.assertEqual(cluster_by, ["id", "customer_id"])
+
+    def test_bronze_cluster_by_auto_true(self):
+        """Test cluster_by_auto property with True value."""
+        onboarding_row = {
+            "bronze_cluster_by_auto": True
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "bronze_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, True)
+
+    def test_bronze_cluster_by_auto_false(self):
+        """Test cluster_by_auto property with False value."""
+        onboarding_row = {
+            "bronze_cluster_by_auto": False
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "bronze_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, False)
+
+    def test_bronze_cluster_by_auto_string_true(self):
+        """Test cluster_by_auto property with string 'true'."""
+        onboarding_row = {
+            "bronze_cluster_by_auto": "true"
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "bronze_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, True)
+
+    def test_bronze_cluster_by_auto_string_false(self):
+        """Test cluster_by_auto property with string 'false'."""
+        onboarding_row = {
+            "bronze_cluster_by_auto": "false"
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "bronze_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, False)
+
+    def test_bronze_cluster_by_auto_none(self):
+        """Test cluster_by_auto property with None value."""
+        onboarding_row = {
+            "bronze_cluster_by_auto": None
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "bronze_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, None)
+
+    def test_bronze_cluster_by_auto_invalid_string(self):
+        """Test cluster_by_auto property with invalid string value."""
+        onboarding_row = {
+            "bronze_cluster_by_auto": "invalid"
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        with self.assertRaises(Exception) as context:
+            onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+                onboarding_row, "bronze_cluster_by_auto")
+        self.assertIn("Expected boolean or string representation of boolean", str(context.exception))
+
+    def test_silver_cluster_by_auto_true(self):
+        """Test silver cluster_by_auto property with True value."""
+        onboarding_row = {
+            "silver_cluster_by_auto": True
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "silver_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, True)
+
+    def test_bronze_cluster_by_auto_string_case_insensitive(self):
+        """Test cluster_by_auto property with case-insensitive string values."""
+        test_values = ["true", "True", "TRUE", "TrUe"]
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+
+        for value in test_values:
+            onboarding_row = {"bronze_cluster_by_auto": value}
+            cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+                onboarding_row, "bronze_cluster_by_auto")
+            self.assertEqual(cluster_by_auto, True, f"Failed for value: {value}")
+
+        test_values_false = ["false", "False", "FALSE", "FaLsE"]
+        for value in test_values_false:
+            onboarding_row = {"bronze_cluster_by_auto": value}
+            cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+                onboarding_row, "bronze_cluster_by_auto")
+            self.assertEqual(cluster_by_auto, False, f"Failed for value: {value}")
+
+    def test_bronze_cluster_by_auto_string_with_whitespace(self):
+        """Test cluster_by_auto property with string values containing whitespace."""
+        onboarding_row = {"bronze_cluster_by_auto": "  true  "}
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "bronze_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, True)
+
+        onboarding_row = {"bronze_cluster_by_auto": "  false  "}
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "bronze_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, False)
+
+    def test_bronze_cluster_by_auto_invalid_type(self):
+        """Test cluster_by_auto property with invalid type."""
+        onboarding_row = {"bronze_cluster_by_auto": 123}
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        with self.assertRaises(Exception) as context:
+            onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+                onboarding_row, "bronze_cluster_by_auto")
+        self.assertIn("Expected boolean or string", str(context.exception))
+
+    def test_bronze_cluster_by_auto_missing_key(self):
+        """Test cluster_by_auto property when key is missing."""
+        onboarding_row = {}
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        cluster_by_auto = onboardDataFlowSpecs._OnboardDataflowspec__get_cluster_by_auto(
+            onboarding_row, "bronze_cluster_by_auto")
+        self.assertEqual(cluster_by_auto, False)
+
+    def test_quarantine_cluster_by_auto_true(self):
+        """Test quarantine table cluster_by_auto with True value."""
+        onboarding_row = {
+            "bronze_database_quarantine_it": "quarantine_db",
+            "bronze_quarantine_table": "quarantine_table",
+            "bronze_quarantine_table_cluster_by_auto": True
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        quarantine_target_details, _ = (
+            onboardDataFlowSpecs._OnboardDataflowspec__get_quarantine_details(
+                "it", "bronze", onboarding_row
+            )
+        )
+        self.assertEqual(quarantine_target_details.get("cluster_by_auto"), True)
+
+    def test_quarantine_cluster_by_auto_false(self):
+        """Test quarantine table cluster_by_auto with False value."""
+        onboarding_row = {
+            "bronze_database_quarantine_it": "quarantine_db",
+            "bronze_quarantine_table": "quarantine_table",
+            "bronze_quarantine_table_cluster_by_auto": False
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        quarantine_target_details, _ = (
+            onboardDataFlowSpecs._OnboardDataflowspec__get_quarantine_details(
+                "it", "bronze", onboarding_row
+            )
+        )
+        self.assertEqual(quarantine_target_details.get("cluster_by_auto"), False)
+
+    def test_quarantine_cluster_by_auto_string(self):
+        """Test quarantine table cluster_by_auto with string value."""
+        onboarding_row = {
+            "bronze_database_quarantine_it": "quarantine_db",
+            "bronze_quarantine_table": "quarantine_table",
+            "bronze_quarantine_table_cluster_by_auto": "true"
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        quarantine_target_details, _ = (
+            onboardDataFlowSpecs._OnboardDataflowspec__get_quarantine_details(
+                "it", "bronze", onboarding_row
+            )
+        )
+        self.assertEqual(quarantine_target_details.get("cluster_by_auto"), True)
+
+    def test_quarantine_cluster_by_auto_default(self):
+        """Test quarantine table cluster_by_auto defaults when not provided."""
+        onboarding_row = {
+            "bronze_database_quarantine_it": "quarantine_db",
+            "bronze_quarantine_table": "quarantine_table"
+        }
+        onboardDataFlowSpecs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        quarantine_target_details, _ = (
+            onboardDataFlowSpecs._OnboardDataflowspec__get_quarantine_details(
+                "it", "bronze", onboarding_row
+            )
+        )
+        self.assertEqual(quarantine_target_details.get("cluster_by_auto"), False)

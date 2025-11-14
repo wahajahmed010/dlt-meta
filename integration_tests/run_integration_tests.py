@@ -9,6 +9,7 @@ import traceback
 import uuid
 import webbrowser
 from dataclasses import dataclass
+from datetime import timedelta
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -799,7 +800,7 @@ class DLTMETARunner:
             f"{self.ws.config.host}/jobs/{created_job.job_id}?o={self.ws.get_workspace_id()}"
         )
         print(f"Waiting for job to complete. job_id={created_job.job_id}")
-        run_by_id = self.ws.jobs.run_now(job_id=created_job.job_id).result()
+        run_by_id = self.ws.jobs.run_now(job_id=created_job.job_id).result(timeout=timedelta(minutes=20))
         print(f"Job run finished. run_id={run_by_id}")
         return created_job
 

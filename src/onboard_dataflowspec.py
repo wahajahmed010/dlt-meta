@@ -499,7 +499,8 @@ class OnboardDataflowspec:
             "appendFlows",
             "appendFlowsSchemas",
             "sinks",
-            "clusterBy"
+            "clusterBy",
+            "clusterByAuto"
         ]
         data_flow_spec_schema = StructType(
             [
@@ -540,6 +541,7 @@ class OnboardDataflowspec:
                 StructField("appendFlowsSchemas", MapType(StringType(), StringType(), True), True),
                 StructField("sinks", StringType(), True),
                 StructField("clusterBy", ArrayType(StringType(), True), True),
+                StructField("clusterByAuto", T.BooleanType(), True),
             ]
         )
         data = []
@@ -624,6 +626,7 @@ class OnboardDataflowspec:
                 dlt_sinks = self.get_sink_details(onboarding_row, "bronze")
             cluster_by = self.__get_cluster_by_properties(onboarding_row, bronze_table_properties,
                                                           "bronze_cluster_by")
+            cluster_by_auto = self.__get_cluster_by_auto(onboarding_row, "bronze_cluster_by_auto")
 
             cdc_apply_changes = None
             if (
@@ -681,7 +684,8 @@ class OnboardDataflowspec:
                 append_flows,
                 append_flows_schemas,
                 dlt_sinks,
-                cluster_by
+                cluster_by,
+                cluster_by_auto
             )
             data.append(bronze_row)
             # logger.info(bronze_parition_columns)
@@ -757,6 +761,41 @@ class OnboardDataflowspec:
                     )
             return cluster_by
 
+    def __get_cluster_by_auto(self, onboarding_row, cluster_by_auto_key):
+        """Get cluster_by_auto property from onboarding row."""
+        # If key doesn't exist, return False
+        if cluster_by_auto_key not in onboarding_row:
+            return False
+
+        value = onboarding_row[cluster_by_auto_key]
+
+        # If explicitly set to None, return None
+        if value is None:
+            return None
+
+        # Handle boolean values
+        if isinstance(value, bool):
+            return value
+
+        # Handle string values
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            if value_lower == 'true':
+                return True
+            elif value_lower == 'false':
+                return False
+            else:
+                raise Exception(
+                    f"Invalid {cluster_by_auto_key}: Expected boolean or string representation of boolean "
+                    f"but got '{value}'"
+                )
+
+        # Invalid type
+        raise Exception(
+            f"Invalid {cluster_by_auto_key}: Expected boolean or string representation of boolean "
+            f"but got {type(value).__name__}: '{value}'"
+        )
+
     def __get_quarantine_details(self, env, layer, onboarding_row):
         quarantine_table_partition_columns = ""
         quarantine_target_details = {}
@@ -781,6 +820,9 @@ class OnboardDataflowspec:
 
         quarantine_table_cluster_by = self.__get_cluster_by_properties(onboarding_row, quarantine_table_properties,
                                                                        f"{layer}_quarantine_table_cluster_by")
+        quarantine_table_cluster_by_auto = self.__get_cluster_by_auto(
+            onboarding_row, f"{layer}_quarantine_table_cluster_by_auto"
+        )
         if (
             f"{layer}_database_quarantine_{env}" in onboarding_row
             and onboarding_row[f"{layer}_database_quarantine_{env}"]
@@ -788,7 +830,8 @@ class OnboardDataflowspec:
             quarantine_target_details = {"database": onboarding_row[f"{layer}_database_quarantine_{env}"],
                                          "table": onboarding_row[f"{layer}_quarantine_table"],
                                          "partition_columns": quarantine_table_partition_columns,
-                                         "cluster_by": quarantine_table_cluster_by
+                                         "cluster_by": quarantine_table_cluster_by,
+                                         "cluster_by_auto": quarantine_table_cluster_by_auto
                                          }
             quarantine_catalog = (
                 onboarding_row[f"{layer}_catalog_quarantine_{env}"]
@@ -931,7 +974,7 @@ class OnboardDataflowspec:
             logger.info(f"mandatory missing keys= {missing_mandatory_attr}")
             raise Exception(
                 f"""mandatory missing atrributes for {layer}_apply_changes_from_snapshot = {
-                missing_mandatory_attr}
+                    missing_mandatory_attr}
                 for onboarding row = {onboarding_row}"""
             )
         else:
@@ -1096,6 +1139,7 @@ class OnboardDataflowspec:
             "appendFlows",
             "appendFlowsSchemas",
             "clusterBy",
+            "clusterByAuto",
             "sinks"
         ]
         data_flow_spec_schema = StructType(
@@ -1128,6 +1172,7 @@ class OnboardDataflowspec:
                 StructField("appendFlows", StringType(), True),
                 StructField("appendFlowsSchemas", MapType(StringType(), StringType(), True), True),
                 StructField("clusterBy", ArrayType(StringType(), True), True),
+                StructField("clusterByAuto", T.BooleanType(), True),
                 StructField("sinks", StringType(), True)
             ]
         )
@@ -1219,6 +1264,7 @@ class OnboardDataflowspec:
                 dlt_sinks = self.get_sink_details(onboarding_row, "silver")
             silver_cluster_by = self.__get_cluster_by_properties(onboarding_row, silver_table_properties,
                                                                  "silver_cluster_by")
+            silver_cluster_by_auto = self.__get_cluster_by_auto(onboarding_row, "silver_cluster_by_auto")
 
             silver_cdc_apply_changes = None
             if (
@@ -1284,6 +1330,7 @@ class OnboardDataflowspec:
                 append_flows,
                 append_flow_schemas,
                 silver_cluster_by,
+                silver_cluster_by_auto,
                 dlt_sinks
             )
             data.append(silver_row)

@@ -4,6 +4,15 @@ date: 2021-08-04T14:50:11-04:00
 weight: 80
 draft: false
 ---
+# v0.0.11
+
+## Enhancements
+- Added automatic liquid clustering support (`cluster_by_auto`) for bronze and silver tables [Issue #238](https://github.com/databrickslabs/dlt-meta/issues/238)
+  - Enables automatic liquid clustering on streaming tables via the `cluster_by_auto` parameter
+  - Can be combined with `cluster_by` to define initial clustering keys followed by automatic optimization
+  - Supported for both bronze and silver layer tables
+  - See [Automatic liquid clustering documentation](https://docs.databricks.com/aws/en/delta/clustering#auto-liquid) for more details
+
 # v0.0.10
 
 ## ⚠️ Breaking Changes

@@ -54,6 +54,7 @@ class PipelineReadersTests(DLTFrameworkTestCase):
         "updateDate": datetime.now,
         "updatedBy": "dlt-meta-unittest",
         "clusterBy": [""],
+        "clusterByAuto": False,
     }
 
     bronze_eventhub_dataflow_spec_map = {
@@ -97,6 +98,7 @@ class PipelineReadersTests(DLTFrameworkTestCase):
         "updateDate": datetime.now,
         "updatedBy": "dlt-meta-unittest",
         "clusterBy": [""],
+        "clusterByAuto": False,
     }
 
     bronze_eventhub_dataflow_spec_omit_secret_map = {
@@ -139,6 +141,7 @@ class PipelineReadersTests(DLTFrameworkTestCase):
         "updateDate": datetime.now,
         "updatedBy": "dlt-meta-unittest",
         "clusterBy": [""],
+        "clusterByAuto": False,
     }
 
     bronze_kafka_dataflow_spec_map = {
@@ -173,6 +176,7 @@ class PipelineReadersTests(DLTFrameworkTestCase):
         "updateDate": datetime.now,
         "updatedBy": "dlt-meta-unittest",
         "clusterBy": [""],
+        "clusterByAuto": False,
     }
 
     @classmethod
