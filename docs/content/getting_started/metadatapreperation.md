@@ -36,6 +36,7 @@ The `onboarding.json` file contains links to [silver_transformations.json](https
 | bronze_reader_options | Reader options which can be provided to spark reader <br> e.g multiline=true,header=true in json format |
 | bronze_parition_columns | Bronze table partition cols list |
 | bronze_cluster_by | Bronze tables cluster by cols list |
+| bronze_cluster_by_auto | Enable automatic liquid clustering on the bronze table. Boolean value (true/false). Can be combined with bronze_cluster_by to define initial clustering keys. See [Automatic liquid clustering](https://docs.databricks.com/aws/en/delta/clustering#auto-liquid) |
 | bronze_cdc_apply_changes | Bronze cdc apply changes Json |
 | bronze_apply_changes_from_snapshot | Bronze apply changes from snapshot Json e.g. Mandatory fields: keys=["userId"], scd_type=`1` or `2` optional fields: track_history_column_list=`[col1]`, track_history_except_column_list=`[col2]` | 
 | bronze_table_path_{env} | Bronze table storage path.|
@@ -57,6 +58,7 @@ The `onboarding.json` file contains links to [silver_transformations.json](https
 | silver_table_comment | Silver table comments |
 | silver_partition_columns | Silver table partition columns list |
 | silver_cluster_by | Silver tables cluster by cols list |
+| silver_cluster_by_auto | Enable automatic liquid clustering on the silver table. Boolean value (true/false). Can be combined with silver_cluster_by to define initial clustering keys. See [Automatic liquid clustering](https://docs.databricks.com/aws/en/delta/clustering#auto-liquid) |
 | silver_cdc_apply_changes | Silver cdc apply changes Json |
 | silver_table_path_{env} | Silver table storage path. |
 | silver_table_properties | Lakeflow Declarative Pipeline table properties map. e.g. `{"pipelines.autoOptimize.managed": "false" , "pipelines.autoOptimize.zOrderCols": "year,month", "pipelines.reset.allowed": "false"}` |

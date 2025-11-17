@@ -13,6 +13,7 @@
    },      
    "bronze_database_it": "{uc_catalog_name}.{bronze_schema}",
    "bronze_table": "products",
+   "bronze_cluster_by_auto": true,
    "bronze_apply_changes_from_snapshot": {
    "keys": [
       "product_id"
@@ -23,6 +24,7 @@
    "silver_database_it": "{silver_schema}",
    "silver_table": "products",
    "silver_table_comment": "products silver table",
+   "silver_cluster_by_auto": true,
    "silver_apply_changes_from_snapshot":{
        "keys": [
          "product_id"
@@ -45,6 +47,7 @@
          },          
         "bronze_database_it": "{uc_catalog_name}.{bronze_schema}",
         "bronze_table": "stores",
+        "bronze_cluster_by_auto": true,
         "bronze_apply_changes_from_snapshot": {
          "keys": [
             "store_id"
@@ -54,6 +57,7 @@
    "silver_catalog_it": "{uc_catalog_name}",
    "silver_database_it": "{silver_schema}",
    "silver_table": "stores",
+   "silver_cluster_by_auto": true,
    "silver_apply_changes_from_snapshot":{
        "keys": [
          "store_id"

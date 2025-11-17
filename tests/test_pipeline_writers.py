@@ -61,10 +61,23 @@ class TestDLTSinkWriter(DLTFrameworkTestCase):
         mock_create_sink.assert_called_once_with(name='test_sink', format='kafka', options={})
         mock_append_flow.assert_called_once()
 
-    @patch('dlt.create_sink', new_callable=MagicMock)
-    @patch('dlt.append_flow', new_callable=MagicMock)
-    @patch('dlt.table', new_callable=MagicMock)
-    def test_dataflowpipeline_bronze_sink_write(self, mock_dlt_table, mock_append_flow, mock_create_sink):
+    @patch('src.pipeline_writers.dlt')
+    @patch('src.dataflow_pipeline.dlt')
+    def test_dataflowpipeline_bronze_sink_write(self, mock_dataflow_dlt, mock_writers_dlt):
+        mock_dlt_table = MagicMock(return_value=lambda func: func)
+        mock_append_flow = MagicMock(return_value=lambda func: func)
+        mock_create_sink = MagicMock()
+
+        # Set up mocks for dataflow_pipeline.dlt
+        mock_dataflow_dlt.table = mock_dlt_table
+        mock_dataflow_dlt.append_flow = mock_append_flow
+        mock_dataflow_dlt.create_sink = mock_create_sink
+
+        # Set up mocks for pipeline_writers.dlt
+        mock_writers_dlt.create_sink = mock_create_sink
+        mock_writers_dlt.append_flow = mock_append_flow
+        mock_writers_dlt.read_stream = MagicMock(return_value=None)
+
         local_params = copy.deepcopy(self.onboarding_bronze_silver_params_map)
         local_params["onboarding_file_path"] = self.onboarding_sink_json_file
         local_params["bronze_dataflowspec_table"] = "bronze_dataflowspec_sink"
@@ -85,20 +98,14 @@ class TestDLTSinkWriter(DLTFrameworkTestCase):
         view_name = f"{bronze_dataflow_spec.targetDetails['table']}_inputView"
         pipeline = DataflowPipeline(self.spark, BronzeDataflowSpec(**bronze_dataflow_spec.asDict()), view_name, None)
         pipeline.write()
-        assert mock_create_sink.called_with(
-            name="sink",
-            target="sink",
-            comment="sink dlt table sink"
-        )
-        assert mock_append_flow.called_with(
-            name="sink",
-            target="sink"
-        )
-        assert mock_dlt_table.called_with(
-            pipeline.write_to_delta,
-            name="sink",
-            partition_cols=[],
-            table_properties={},
-            path=None,
-            comment="sink dlt table sink"
-        )
+        # Verify that create_sink was called (may be called multiple times for multiple sinks)
+        self.assertGreater(mock_create_sink.call_count, 0, "create_sink should have been called")
+        # Verify all calls have the required parameters
+        for call in mock_create_sink.call_args_list:
+            _, kwargs = call
+            self.assertIn('name', kwargs)
+            self.assertIn('format', kwargs)
+            self.assertIn('options', kwargs)
+        # Check that append_flow and dlt.table were called
+        self.assertGreater(mock_append_flow.call_count, 0)
+        self.assertGreater(mock_dlt_table.call_count, 0)

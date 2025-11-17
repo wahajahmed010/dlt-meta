@@ -41,6 +41,7 @@ class BronzeDataflowSpec:
     updateDate: datetime
     updatedBy: str
     clusterBy: list
+    clusterByAuto: bool
     sinks: str
 
 
@@ -72,6 +73,7 @@ class SilverDataflowSpec:
     updateDate: datetime
     updatedBy: str
     clusterBy: list
+    clusterByAuto: bool
     sinks: str
 
 
@@ -186,6 +188,7 @@ class DataflowSpecUtils:
         "appendFlowsSchemas",
         "applyChangesFromSnapshot",
         "clusterBy",
+        "clusterByAuto",
         "sinks"
     ]
     additional_silver_df_columns = [
@@ -196,6 +199,7 @@ class DataflowSpecUtils:
         "appendFlowsSchemas",
         "applyChangesFromSnapshot",
         "clusterBy",
+        "clusterByAuto",
         "sinks"
     ]
     additional_cdc_apply_changes_columns = ["flow_name", "once"]

@@ -237,11 +237,21 @@ class DataflowPipeline:
         """Write standard DLT table for bronze or silver layer."""
         target_path, target_table, target_table_name = self._get_target_table_info()
         comment = self._get_table_comment(target_table, is_bronze)
+
+        # Get cluster_by_auto from dataflowSpec, default to False if not present
+        cluster_by_auto = (
+            self.dataflowSpec.clusterByAuto
+            if hasattr(self.dataflowSpec, 'clusterByAuto')
+            and self.dataflowSpec.clusterByAuto is not None
+            else False
+        )
+
         dlt.table(
             self.write_to_delta,
             name=f"{target_table}",
             partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
             cluster_by=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.clusterBy),
+            cluster_by_auto=cluster_by_auto,
             table_properties=self.dataflowSpec.tableProperties,
             path=target_path,
             comment=comment,
@@ -465,6 +475,15 @@ class DataflowPipeline:
         else:
             target_path, target_table, target_table_name = self._get_target_table_info()
             target_comment = self._get_table_comment(target_table, is_bronze)
+
+            # Get cluster_by_auto from dataflowSpec, default to False if not present
+            cluster_by_auto = (
+                self.dataflowSpec.clusterByAuto
+                if hasattr(self.dataflowSpec, 'clusterByAuto')
+                and self.dataflowSpec.clusterByAuto is not None
+                else False
+            )
+
             # Create base table with expectations
             if expect_all_dict:
                 dlt_table_with_expectation = dlt.expect_all(expect_all_dict)(
@@ -474,6 +493,7 @@ class DataflowPipeline:
                         table_properties=self.dataflowSpec.tableProperties,
                         partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
                         cluster_by=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.clusterBy),
+                        cluster_by_auto=cluster_by_auto,
                         path=target_path,
                         comment=target_comment,
                     )
@@ -487,6 +507,7 @@ class DataflowPipeline:
                             table_properties=self.dataflowSpec.tableProperties,
                             partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
                             cluster_by=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.clusterBy),
+                            cluster_by_auto=cluster_by_auto,
                             path=target_path,
                             comment=target_comment,
                         )
@@ -503,6 +524,7 @@ class DataflowPipeline:
                             table_properties=self.dataflowSpec.tableProperties,
                             partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
                             cluster_by=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.clusterBy),
+                            cluster_by_auto=cluster_by_auto,
                             path=target_path,
                             comment=target_comment,
                         )
@@ -555,6 +577,14 @@ class DataflowPipeline:
                 else f"{layer_name} dlt quarantine table {quarantine_table}"
             )
 
+            # Get cluster_by_auto from quarantine configuration, default to False
+            # Handle both string and boolean values since quarantineTargetDetails uses StringType
+            q_cluster_by_auto_value = quarantine_target_details.get("cluster_by_auto", False)
+            if isinstance(q_cluster_by_auto_value, str):
+                q_cluster_by_auto = q_cluster_by_auto_value.lower().strip() == 'true'
+            else:
+                q_cluster_by_auto = bool(q_cluster_by_auto_value) if q_cluster_by_auto_value else False
+
             dlt.expect_all_or_drop(expect_or_quarantine_dict)(
                 dlt.table(
                     self.write_to_delta,
@@ -562,6 +592,7 @@ class DataflowPipeline:
                     table_properties=self.dataflowSpec.quarantineTableProperties,
                     partition_cols=q_partition_cols,
                     cluster_by=q_cluster_by,
+                    cluster_by_auto=q_cluster_by_auto,
                     path=quarantine_path,
                     comment=quarantine_comment,
                 )
@@ -590,13 +621,15 @@ class DataflowPipeline:
                     else self.silver_schema
                 )
             target_details = self._get_target_details()
+
             append_flow_writer = AppendFlowWriter(
                 self.spark, append_flow,
                 target_details['table'],
                 struct_schema,
                 self.dataflowSpec.tableProperties,
                 self.dataflowSpec.partitionColumns,
-                self.dataflowSpec.clusterBy
+                self.dataflowSpec.clusterBy,
+                self.dataflowSpec.clusterByAuto
             )
             append_flow_writer.write_flow()
 
@@ -711,11 +744,21 @@ class DataflowPipeline:
         target_table = (
             f"{target_cl_name}{target_db_name}.{target_table_name}"
         )
+
+        # Get cluster_by_auto from dataflowSpec, default to False if not present
+        cluster_by_auto = (
+            self.dataflowSpec.clusterByAuto
+            if hasattr(self.dataflowSpec, 'clusterByAuto')
+            and self.dataflowSpec.clusterByAuto is not None
+            else False
+        )
+
         dlt.create_streaming_table(
             name=target_table,
             table_properties=self.dataflowSpec.tableProperties,
             partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
             cluster_by=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.clusterBy),
+            cluster_by_auto=cluster_by_auto,
             path=target_path,
             schema=struct_schema,
             expect_all=expect_all_dict,
