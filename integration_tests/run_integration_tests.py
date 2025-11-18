@@ -151,6 +151,10 @@ class DLTMetaRunnerConf:
     # snapshot info
     snapshot_template: str = "integration_tests/conf/snapshot-onboarding.template"
 
+    # silver_only info
+    silver_only_template: str = "integration_tests/conf/silver_only_cloudfiles-onboarding.template"
+    silver_only_pipeline_id: str = None
+
 
 class DLTMETARunner:
     """
@@ -233,12 +237,13 @@ class DLTMETARunner:
             "eventhub": "./integration_tests/notebooks/eventhub_runners/",
             "kafka": "./integration_tests/notebooks/kafka_runners/",
             "snapshot": "./integration_tests/notebooks/snapshot_runners/",
+            "silver_only": "./integration_tests/notebooks/silver_only_runners/",
         }
         try:
             runner_conf.runners_full_local_path = source_paths[runner_conf.source]
         except KeyError:
             raise Exception(
-                "Given source is not support. Support source are: cloudfiles, eventhub, kafka or snapshot"
+                "Given source is not supported. Supported sources are: cloudfiles, eventhub, kafka, snapshot, or silver_only"
             )
 
         return runner_conf
@@ -318,6 +323,15 @@ class DLTMETARunner:
                 ),
             )
         ]
+        
+        # For silver_only tests, use different onboard layer
+        if runner_conf.source == "silver_only":
+            onboard_layer = "silver"
+        elif runner_conf.source in ["cloudfiles", "snapshot"]:
+            onboard_layer = "bronze_silver"
+        else:
+            onboard_layer = "bronze"
+        
         tasks = [
             jobs.Task(
                 task_key="setup_dlt_meta_pipeline_spec",
@@ -328,19 +342,12 @@ class DLTMETARunner:
                     package_name="dlt_meta",
                     entry_point="run",
                     named_parameters={
-                        "onboard_layer": (
-                            "bronze_silver"
-                            if runner_conf.source in ["cloudfiles", "snapshot"]
-                            else "bronze"
-                        ),
+                        "onboard_layer": onboard_layer,
                         "database": f"{runner_conf.uc_catalog_name}.{runner_conf.dlt_meta_schema}",
                         "onboarding_file_path": f"{runner_conf.uc_volume_path}/{self.base_dir}/conf/onboarding.json",
                         "silver_dataflowspec_table": "silver_dataflowspec_cdc",
-                        "silver_dataflowspec_path": f"{runner_conf.uc_volume_path}/data/dlt_spec/silver",
-                        "bronze_dataflowspec_table": "bronze_dataflowspec_cdc",
                         "import_author": "Ravi",
                         "version": "v1",
-                        "bronze_dataflowspec_path": f"{runner_conf.uc_volume_path}/data/dlt_spec/bronze",
                         "overwrite": "True",
                         "env": runner_conf.env,
                         "uc_enabled": "True",
@@ -348,18 +355,21 @@ class DLTMETARunner:
                 ),
             ),
             jobs.Task(
-                task_key="bronze_dlt_pipeline",
+                task_key="bronze_dlt_pipeline" if runner_conf.source != "silver_only" else "silver_only_dlt_pipeline",
                 depends_on=[
                     jobs.TaskDependency(
                         task_key=(
                             "setup_dlt_meta_pipeline_spec"
-                            if runner_conf.source == "cloudfiles" or runner_conf.source == "snapshot"
+                            if runner_conf.source in ["cloudfiles", "snapshot", "silver_only"]
                             else "publish_events"
                         )
                     )
                 ],
                 pipeline_task=jobs.PipelineTask(
-                    pipeline_id=runner_conf.bronze_pipeline_id
+                    pipeline_id=(
+                        runner_conf.bronze_pipeline_id if runner_conf.source != "silver_only"
+                        else runner_conf.silver_only_pipeline_id
+                    )
                 ),
             ),
             jobs.Task(
@@ -377,10 +387,10 @@ class DLTMETARunner:
                     base_parameters={
                         "uc_enabled": "True",
                         "uc_catalog_name": f"{runner_conf.uc_catalog_name}",
-                        "bronze_schema": f"{runner_conf.bronze_schema}",
+                        "bronze_schema": f"{runner_conf.bronze_schema}" if runner_conf.source != "silver_only" else "",
                         "silver_schema": (
                             f"{runner_conf.silver_schema}"
-                            if runner_conf.source == "cloudfiles" or runner_conf.source == "snapshot"
+                            if runner_conf.source in ["cloudfiles", "snapshot", "silver_only"]
                             else ""
                         ),
                         "output_file_path": f"/Workspace{runner_conf.test_output_file_path}",
@@ -540,25 +550,36 @@ class DLTMETARunner:
                     )
                 ]
             )
-        else:
-            if runner_conf.source == "eventhub":
-                base_parameters = {
-                    "eventhub_name": runner_conf.eventhub_name,
-                    "eventhub_name_append_flow": runner_conf.eventhub_name_append_flow,
-                    "eventhub_namespace": runner_conf.eventhub_namespace,
-                    "eventhub_secrets_scope_name": runner_conf.eventhub_secrets_scope_name,
-                    "eventhub_accesskey_name": runner_conf.eventhub_producer_accesskey_name,
-                    "eventhub_input_data": f"/{runner_conf.uc_volume_path}/{self.base_dir}/resources/data/iot/iot.json",  # noqa : E501
-                    "eventhub_append_flow_input_data": f"/{runner_conf.uc_volume_path}/{self.base_dir}/resources/data/iot_eventhub_af/iot.json",  # noqa : E501
-                }
-            elif runner_conf.source == "kafka":
-                base_parameters = {
-                    "kafka_source_topic": runner_conf.kafka_source_topic,
-                    "kafka_source_servers_secrets_scope_name": runner_conf.kafka_source_servers_secrets_scope_name,
-                    "kafka_source_servers_secrets_scope_key": runner_conf.kafka_source_servers_secrets_scope_key,
-                    "kafka_input_data": f"/{runner_conf.uc_volume_path}/{self.base_dir}/resources/data/iot/iot.json",  # noqa : E501
-                }
-
+        elif runner_conf.source == "eventhub":
+            base_parameters = {
+                "eventhub_name": runner_conf.eventhub_name,
+                "eventhub_name_append_flow": runner_conf.eventhub_name_append_flow,
+                "eventhub_namespace": runner_conf.eventhub_namespace,
+                "eventhub_secrets_scope_name": runner_conf.eventhub_secrets_scope_name,
+                "eventhub_accesskey_name": runner_conf.eventhub_producer_accesskey_name,
+                "eventhub_input_data": f"/{runner_conf.uc_volume_path}/{self.base_dir}/resources/data/iot/iot.json",  # noqa : E501
+                "eventhub_append_flow_input_data": f"/{runner_conf.uc_volume_path}/{self.base_dir}/resources/data/iot_eventhub_af/iot.json",  # noqa : E501
+            }
+            tasks.append(
+                jobs.Task(
+                    task_key="publish_events",
+                    description="test",
+                    depends_on=[
+                        jobs.TaskDependency(task_key="setup_dlt_meta_pipeline_spec")
+                    ],
+                    notebook_task=jobs.NotebookTask(
+                        notebook_path=f"{runner_conf.runners_nb_path}/runners/publish_events.py",
+                        base_parameters=base_parameters,
+                    ),
+                ),
+            )
+        elif runner_conf.source == "kafka":
+            base_parameters = {
+                "kafka_source_topic": runner_conf.kafka_source_topic,
+                "kafka_source_servers_secrets_scope_name": runner_conf.kafka_source_servers_secrets_scope_name,
+                "kafka_source_servers_secrets_scope_key": runner_conf.kafka_source_servers_secrets_scope_key,
+                "kafka_input_data": f"/{runner_conf.uc_volume_path}/{self.base_dir}/resources/data/iot/iot.json",  # noqa : E501
+            }
             tasks.append(
                 jobs.Task(
                     task_key="publish_events",
@@ -584,6 +605,8 @@ class DLTMETARunner:
             return "silver_dlt_pipeline"
         elif source == "snapshot":
             return "silver_v3_dlt_pipeline"
+        elif source == "silver_only":
+            return "silver_only_dlt_pipeline"
         else:
             return "bronze_dlt_pipeline"
 
@@ -594,12 +617,13 @@ class DLTMETARunner:
             name=runner_conf.dlt_meta_schema,
             comment="dlt_meta framework schema",
         )
-        SchemasAPI(self.ws.api_client).create(
-            catalog_name=runner_conf.uc_catalog_name,
-            name=runner_conf.bronze_schema,
-            comment="bronze_schema",
-        )
-        if runner_conf.source in ["cloudfiles", "snapshot"]:
+        if runner_conf.source != "silver_only":
+            SchemasAPI(self.ws.api_client).create(
+                catalog_name=runner_conf.uc_catalog_name,
+                name=runner_conf.bronze_schema,
+                comment="bronze_schema",
+            )
+        if runner_conf.source in ["cloudfiles", "snapshot", "silver_only"]:
             SchemasAPI(self.ws.api_client).create(
                 catalog_name=runner_conf.uc_catalog_name,
                 name=runner_conf.silver_schema,
@@ -623,10 +647,12 @@ class DLTMETARunner:
         string_subs = {
             "{uc_volume_path}": runner_conf.uc_volume_path,
             "{uc_catalog_name}": runner_conf.uc_catalog_name,
-            "{bronze_schema}": runner_conf.bronze_schema,
         }
 
-        if runner_conf.source in ["cloudfiles", "snapshot"]:
+        if runner_conf.source != "silver_only":
+            string_subs["{bronze_schema}"] = runner_conf.bronze_schema
+
+        if runner_conf.source in ["cloudfiles", "snapshot", "silver_only"]:
             string_subs.update({
                 "{silver_schema}": runner_conf.silver_schema,
                 "{source_database}": runner_conf.dlt_meta_schema
@@ -670,6 +696,8 @@ class DLTMETARunner:
             template_path = runner_conf.kafka_template
         elif runner_conf.source == "snapshot":
             template_path = runner_conf.snapshot_template
+        elif runner_conf.source == "silver_only":
+            template_path = runner_conf.silver_only_template
 
         if template_path:
             with open(f"{template_path}", "r") as f:
@@ -764,6 +792,17 @@ class DLTMETARunner:
         self.upload_files_to_databricks(runner_conf)
 
     def create_bronze_silver_dlt(self, runner_conf: DLTMetaRunnerConf):
+        # For silver_only tests, skip bronze pipeline creation
+        if runner_conf.source == "silver_only":
+            runner_conf.silver_only_pipeline_id = self.create_dlt_meta_pipeline(
+                f"dlt-meta-silver-only-{runner_conf.run_id}",
+                "silver",
+                "SILVER_ONLY",
+                runner_conf.silver_schema,
+                runner_conf,
+            )
+            return
+
         runner_conf.bronze_pipeline_id = self.create_dlt_meta_pipeline(
             f"dlt-meta-bronze-{runner_conf.run_id}",
             "bronze",
@@ -828,6 +867,8 @@ class DLTMETARunner:
             self.ws.pipelines.delete(runner_conf.bronze_pipeline_A2_id)
         if runner_conf.silver_pipeline_id:
             self.ws.pipelines.delete(runner_conf.silver_pipeline_id)
+        if runner_conf.silver_only_pipeline_id:
+            self.ws.pipelines.delete(runner_conf.silver_only_pipeline_id)
         if runner_conf.uc_catalog_name:
             test_schema_list = [
                 runner_conf.dlt_meta_schema,
@@ -898,10 +939,10 @@ def process_arguments() -> dict[str:str]:
         ],
         [
             "source",
-            "Provide source type: cloudfiles, eventhub, kafka",
+            "Provide source type: cloudfiles, eventhub, kafka, snapshot, silver_only",
             str.lower,
             False,
-            ["cloudfiles", "eventhub", "kafka", "snapshot"],
+            ["cloudfiles", "eventhub", "kafka", "snapshot", "silver_only"],
         ],
         # Eventhub arguments
         ["eventhub_name", "Provide eventhub_name e.g: iot", str.lower, False, []],

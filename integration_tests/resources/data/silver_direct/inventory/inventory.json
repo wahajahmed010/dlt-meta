@@ -1,0 +1,11 @@
+{"inventory_id": "I001", "product_id": "P001", "warehouse_id": "W001", "quantity": 50, "last_counted": "2024-01-01T10:00:00", "operation": "INSERT"}
+{"inventory_id": "I002", "product_id": "P002", "warehouse_id": "W001", "quantity": 100, "last_counted": "2024-01-01T10:00:00", "operation": "INSERT"}
+{"inventory_id": "I003", "product_id": "P003", "warehouse_id": "W002", "quantity": 75, "last_counted": "2024-01-01T10:00:00", "operation": "INSERT"}
+{"inventory_id": "I004", "product_id": "P004", "warehouse_id": "W002", "quantity": 30, "last_counted": "2024-01-01T10:00:00", "operation": "INSERT"}
+{"inventory_id": "I005", "product_id": "P005", "warehouse_id": "W001", "quantity": 200, "last_counted": "2024-01-01T10:00:00", "operation": "INSERT"}
+{"inventory_id": "I001", "product_id": "P001", "warehouse_id": "W001", "quantity": 45, "last_counted": "2024-01-05T14:00:00", "operation": "UPDATE"}
+{"inventory_id": "I002", "product_id": "P002", "warehouse_id": "W001", "quantity": 98, "last_counted": "2024-01-06T15:00:00", "operation": "UPDATE"}
+{"inventory_id": "I003", "product_id": "P003", "warehouse_id": "W002", "quantity": 74, "last_counted": "2024-01-07T16:00:00", "operation": "UPDATE"}
+{"inventory_id": "I001", "product_id": "P001", "warehouse_id": "W001", "quantity": 40, "last_counted": "2024-01-10T18:00:00", "operation": "UPDATE"}
+{"inventory_id": "I006", "product_id": "P006", "warehouse_id": "W003", "quantity": 60, "last_counted": "2024-01-08T17:00:00", "operation": "INSERT"}
+

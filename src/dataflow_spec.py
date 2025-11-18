@@ -57,6 +57,7 @@ class SilverDataflowSpec:
     targetFormat: str
     targetDetails: map
     tableProperties: map
+    schema: str
     selectExp: list
     whereClause: list
     partitionColumns: list
@@ -192,6 +193,7 @@ class DataflowSpecUtils:
         "sinks"
     ]
     additional_silver_df_columns = [
+        "schema",
         "dataQualityExpectations",
         "quarantineTargetDetails",
         "quarantineTableProperties",

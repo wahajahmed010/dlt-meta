@@ -1,0 +1,15 @@
+{
+    "expect": {
+        "valid_product_id": "product_id IS NOT NULL",
+        "valid_product_name": "product_name IS NOT NULL AND LENGTH(product_name) > 0",
+        "valid_category": "category IN ('Electronics', 'Clothing', 'Books', 'Home', 'Sports')"
+    },
+    "expect_or_drop": {
+        "valid_price": "price > 0 AND price < 10000",
+        "valid_stock": "stock_quantity >= 0"
+    },
+    "expect_or_fail": {
+        "required_fields": "product_id IS NOT NULL AND price IS NOT NULL"
+    }
+}
+

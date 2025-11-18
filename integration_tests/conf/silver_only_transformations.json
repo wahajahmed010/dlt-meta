@@ -1,0 +1,45 @@
+[
+  {
+    "target_table": "products_silver_direct",
+    "select_exp": [
+      "product_id",
+      "UPPER(product_name) as product_name",
+      "category",
+      "price",
+      "stock_quantity",
+      "last_updated",
+      "is_active",
+      "input_file_name",
+      "input_file_path"
+    ],
+    "where_clause": [
+      "price > 0",
+      "is_active = true"
+    ]
+  },
+  {
+    "target_table": "orders_silver_direct",
+    "select_exp": [
+      "order_id",
+      "customer_id",
+      "product_id",
+      "quantity",
+      "total_amount",
+      "order_date",
+      "status",
+      "operation"
+    ]
+  },
+  {
+    "target_table": "inventory_silver_direct",
+    "select_exp": [
+      "inventory_id",
+      "product_id",
+      "warehouse_id",
+      "quantity",
+      "last_counted",
+      "operation"
+    ]
+  }
+]
+

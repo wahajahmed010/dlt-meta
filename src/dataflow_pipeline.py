@@ -112,13 +112,18 @@ class DataflowPipeline:
             self.applyChangesFromSnapshot = DataflowSpecUtils.get_apply_changes_from_snapshot(
                 self.dataflowSpec.applyChangesFromSnapshot
             )
+        # Handle schema for both bronze and silver dataflow specs
         if isinstance(dataflow_spec, BronzeDataflowSpec):
             if dataflow_spec.schema is not None:
                 self.schema_json = json.loads(dataflow_spec.schema)
             else:
                 self.schema_json = None
         elif isinstance(dataflow_spec, SilverDataflowSpec):
-            self.schema_json = None
+            # Silver can now have schema when reading directly from cloudFiles/kafka/eventhub
+            if hasattr(dataflow_spec, 'schema') and dataflow_spec.schema is not None:
+                self.schema_json = json.loads(dataflow_spec.schema)
+            else:
+                self.schema_json = None
         self.next_snapshot_and_version = None
         self.next_snapshot_and_version = next_snapshot_and_version
         self.next_snapshot_and_version_from_source_view = False
@@ -375,49 +380,78 @@ class DataflowPipeline:
 
     def read_silver(self) -> DataFrame:
         """Read Silver tables."""
+        logger.info("In read_silver func")
         silver_dataflow_spec: SilverDataflowSpec = self.dataflowSpec
         source_details = self._get_source_details()
         reader_config_opts = self._get_reader_config_options()
-        source_cl = source_details.get('catalog', None)
-        source_cl_name = f"{source_cl}." if source_cl is not None else ''
-        source_database = source_details["database"]
-        source_table = source_details["table"]
         select_exp = silver_dataflow_spec.selectExp
         where_clause = silver_dataflow_spec.whereClause
-        if reader_config_opts:
-            if silver_dataflow_spec.sourceFormat == "snapshot":
-                bronze_df = self.spark.read.options(**reader_config_opts).table(
-                    f"{source_cl_name}{source_database}.{source_table}"
-                ) if self.uc_enabled else self.spark.read.options(
-                    **reader_config_opts
-                ).load(
-                    path=source_details.get("path"),
-                    format="delta"
-                )
+
+        # Check if reading directly from cloudFiles, kafka, or eventhub (bypassing bronze)
+        if silver_dataflow_spec.sourceFormat in ["cloudFiles", "kafka", "eventhub"]:
+            logger.info(f"Reading silver directly from {silver_dataflow_spec.sourceFormat}")
+            pipeline_reader = PipelineReaders(
+                self.spark,
+                silver_dataflow_spec.sourceFormat,
+                source_details,
+                reader_config_opts,
+                self.schema_json
+            )
+            if silver_dataflow_spec.sourceFormat == "cloudFiles":
+                bronze_df = pipeline_reader.read_dlt_cloud_files()
+            elif silver_dataflow_spec.sourceFormat in ["eventhub", "kafka"]:
+                bronze_df = pipeline_reader.read_kafka()
             else:
-                bronze_df = self.spark.readStream.options(**reader_config_opts).table(
-                    f"{source_cl_name}{source_database}.{source_table}"
-                ) if self.uc_enabled else self.spark.readStream.options(
-                    **reader_config_opts
-                ).load(
-                    path=source_details.get("path"),
-                    format="delta"
-                )
+                raise Exception(f"{silver_dataflow_spec.sourceFormat} source format not supported for silver layer")
+        # Traditional path: reading from delta tables (bronze layer)
         else:
-            if silver_dataflow_spec.sourceFormat == "snapshot":
-                bronze_df = self.spark.read.table(
-                    f"{source_cl_name}{source_database}.{source_table}"
-                ) if self.uc_enabled else self.spark.read.load(
-                    path=source_details.get("path"),
-                    format="delta"
+            source_cl = source_details.get('catalog', None)
+            source_cl_name = f"{source_cl}." if source_cl is not None else ''
+            source_database = source_details.get("database")
+            source_table = source_details.get("table")
+
+            if not source_database or not source_table:
+                raise Exception(
+                    f"For sourceFormat='{silver_dataflow_spec.sourceFormat}', "
+                    f"source_details must contain 'database' and 'table' fields. "
+                    f"Got source_details={source_details}"
                 )
+
+            if reader_config_opts:
+                if silver_dataflow_spec.sourceFormat == "snapshot":
+                    bronze_df = self.spark.read.options(**reader_config_opts).table(
+                        f"{source_cl_name}{source_database}.{source_table}"
+                    ) if self.uc_enabled else self.spark.read.options(
+                        **reader_config_opts
+                    ).load(
+                        path=source_details.get("path"),
+                        format="delta"
+                    )
+                else:
+                    bronze_df = self.spark.readStream.options(**reader_config_opts).table(
+                        f"{source_cl_name}{source_database}.{source_table}"
+                    ) if self.uc_enabled else self.spark.readStream.options(
+                        **reader_config_opts
+                    ).load(
+                        path=source_details.get("path"),
+                        format="delta"
+                    )
             else:
-                bronze_df = self.spark.readStream.table(
-                    f"{source_cl_name}{source_database}.{source_table}"
-                ) if self.uc_enabled else self.spark.readStream.load(
-                    path=source_details.get("path"),
-                    format="delta"
-                )
+                if silver_dataflow_spec.sourceFormat == "snapshot":
+                    bronze_df = self.spark.read.table(
+                        f"{source_cl_name}{source_database}.{source_table}"
+                    ) if self.uc_enabled else self.spark.read.load(
+                        path=source_details.get("path"),
+                        format="delta"
+                    )
+                else:
+                    bronze_df = self.spark.readStream.table(
+                        f"{source_cl_name}{source_database}.{source_table}"
+                    ) if self.uc_enabled else self.spark.readStream.load(
+                        path=source_details.get("path"),
+                        format="delta"
+                    )
+
         if select_exp:
             bronze_df = bronze_df.selectExpr(*select_exp)
         if where_clause:

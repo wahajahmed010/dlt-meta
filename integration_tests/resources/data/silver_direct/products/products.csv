@@ -1,0 +1,12 @@
+product_id,product_name,category,price,stock_quantity,last_updated,is_active
+P001,laptop computer,Electronics,1200.00,50,2024-01-01T10:00:00,true
+P002,desk chair,Home,299.99,100,2024-01-02T11:00:00,true
+P003,running shoes,Sports,89.99,75,2024-01-03T12:00:00,true
+P004,python book,Books,45.50,30,2024-01-04T13:00:00,true
+P005,wireless mouse,Electronics,25.99,200,2024-01-05T14:00:00,true
+P006,coffee maker,Home,79.99,60,2024-01-06T15:00:00,true
+P007,yoga mat,Sports,29.99,150,2024-01-07T16:00:00,true
+P008,novel book,Books,19.99,80,2024-01-08T17:00:00,true
+P009,defective item,Electronics,-10.00,5,2024-01-09T18:00:00,true
+P010,discontinued item,Home,50.00,0,2024-01-10T19:00:00,false
+

@@ -209,31 +209,49 @@ class OnboardDataflowspec:
         silver_transformation_json_df = self.spark.createDataFrame(
             data=emp_rdd, schema=columns
         )
+
+        # Check if transformation JSON file is provided
+        # Collect unique transformation JSON file paths
         silver_transformation_json_file = onboarding_df.select(
             f"silver_transformation_json_{env}"
         ).dropDuplicates()
 
         silver_transformation_json_files = silver_transformation_json_file.collect()
-        for row in silver_transformation_json_files:
-            silver_transformation_json_df = silver_transformation_json_df.union(
-                self.spark.read.option("multiline", "true")
-                .schema(columns)
-                .json(row[f"silver_transformation_json_{env}"])
+
+        # Check if any transformation JSON files are provided (not null/empty)
+        has_transformation_json = any(
+            row[f"silver_transformation_json_{env}"]
+            for row in silver_transformation_json_files
+            if row[f"silver_transformation_json_{env}"]
+        )
+
+        if has_transformation_json:
+            # Load transformation JSON files (both traditional and silver-only with external JSON)
+            for row in silver_transformation_json_files:
+                if row[f"silver_transformation_json_{env}"]:  # Check if not empty
+                    silver_transformation_json_df = silver_transformation_json_df.union(
+                        self.spark.read.option("multiline", "true")
+                        .schema(columns)
+                        .json(row[f"silver_transformation_json_{env}"])
+                    )
+
+            logger.info(silver_transformation_json_file)
+
+            silver_data_flow_spec_df = silver_transformation_json_df.join(
+                silver_data_flow_spec_df,
+                silver_transformation_json_df.target_table
+                == silver_data_flow_spec_df.targetDetails["table"],
             )
-
-        logger.info(silver_transformation_json_file)
-
-        silver_data_flow_spec_df = silver_transformation_json_df.join(
-            silver_data_flow_spec_df,
-            silver_transformation_json_df.target_table
-            == silver_data_flow_spec_df.targetDetails["table"],
-        )
-        silver_dataflow_spec_df = (
-            silver_data_flow_spec_df.drop("target_table")  # .drop("path")
-            .drop("target_partition_cols")
-            .withColumnRenamed("select_exp", "selectExp")
-            .withColumnRenamed("where_clause", "whereClause")
-        )
+            silver_dataflow_spec_df = (
+                silver_data_flow_spec_df.drop("target_table")  # .drop("path")
+                .drop("target_partition_cols")
+                .withColumnRenamed("select_exp", "selectExp")
+                .withColumnRenamed("where_clause", "whereClause")
+            )
+        else:
+            # No transformation JSON: using inline silver_select_expressions
+            # selectExp and whereClause are already in silver_data_flow_spec_df
+            silver_dataflow_spec_df = silver_data_flow_spec_df
 
         silver_dataflow_spec_df = self.__add_audit_columns(
             silver_dataflow_spec_df,
@@ -627,6 +645,26 @@ class OnboardDataflowspec:
             cluster_by = self.__get_cluster_by_properties(onboarding_row, bronze_table_properties,
                                                           "bronze_cluster_by")
             cluster_by_auto = self.__get_cluster_by_auto(onboarding_row, "bronze_cluster_by_auto")
+
+            # Validate: Cannot use both partition columns and clustering
+            has_partition_columns = (
+                partition_columns and partition_columns != [""]
+            )
+            has_clustering = (
+                (cluster_by and cluster_by != [""]) or cluster_by_auto
+            )
+            if has_partition_columns and has_clustering:
+                table_name = onboarding_row.get("bronze_table", "unknown")
+                raise ValueError(
+                    f"Configuration error for table '{table_name}' (data_flow_id={data_flow_spec_id}): "
+                    f"Cannot use both 'bronze_partition_columns' and 'bronze_cluster_by'/'bronze_cluster_by_auto'. "
+                    f"Delta Lake tables support either partition columns OR liquid clustering, but not both. "
+                    f"Please choose one strategy:\n"
+                    f"  - Use 'bronze_partition_columns' for traditional partitioning (static, good for time-series)\n"
+                    f"  - Use 'bronze_cluster_by' or 'bronze_cluster_by_auto' for liquid clustering (flexible, recommended)\n"
+                    f"Current config has: partition_columns={partition_columns}, "
+                    f"cluster_by={cluster_by}, cluster_by_auto={cluster_by_auto}"
+                )
 
             cdc_apply_changes = None
             if (
@@ -1066,6 +1104,78 @@ class OnboardDataflowspec:
 
         return source_details, bronze_reader_config_options, schema
 
+    def get_silver_source_details_reader_options_schema(self, onboarding_row, env):
+        """Get silver source details, reader options and schema for silver-only mode.
+
+        Args:
+            onboarding_row: Row from onboarding dataframe
+            env: Environment (e.g., 'it', 'prod')
+
+        Returns:
+            tuple: (source_details, silver_reader_config_options, schema)
+        """
+        source_details = {}
+        silver_reader_config_options = {}
+        schema = None
+        source_format = onboarding_row["source_format"]
+
+        # Get reader options
+        silver_reader_options_json = (
+            onboarding_row["silver_reader_options"]
+            if "silver_reader_options" in onboarding_row
+            else {}
+        )
+        if silver_reader_options_json:
+            silver_reader_config_options = self.__delete_none(
+                silver_reader_options_json.asDict()
+            )
+
+        # Get source details
+        source_details_json = onboarding_row["source_details"]
+        if source_details_json:
+            source_details_file = self.__delete_none(source_details_json.asDict())
+            if (source_format.lower() == "cloudfiles"
+                    or source_format.lower() == "delta"
+                    or source_format.lower() == "snapshot"):
+                if "path" in source_details_file:
+                    source_details["path"] = source_details_file["path"]
+                if f"source_path_{env}" in source_details_file:
+                    source_details["path"] = source_details_file[f"source_path_{env}"]
+                if f"source_catalog_{env}" in source_details_file:
+                    source_details["catalog"] = source_details_file[f"source_catalog_{env}"]
+                if "source_database" in source_details_file:
+                    source_details["source_database"] = source_details_file["source_database"]
+                if "source_table" in source_details_file:
+                    source_details["source_table"] = source_details_file["source_table"]
+                if "source_metadata" in source_details_file:
+                    source_metadata_dict = self.__delete_none(
+                        source_details_file["source_metadata"].asDict()
+                    )
+                    if "select_metadata_cols" in source_metadata_dict:
+                        select_metadata_cols = self.__delete_none(
+                            source_metadata_dict["select_metadata_cols"].asDict()
+                        )
+                        source_metadata_dict["select_metadata_cols"] = select_metadata_cols
+                    source_details["source_metadata"] = json.dumps(
+                        self.__delete_none(source_metadata_dict)
+                    )
+            if source_format.lower() == "snapshot":
+                snapshot_format = source_details_file.get("snapshot_format", None)
+                if snapshot_format is None:
+                    raise Exception("snapshot_format is missing in the source_details")
+                source_details["snapshot_format"] = snapshot_format
+                if f"source_path_{env}" in source_details_file:
+                    source_details["path"] = source_details_file[f"source_path_{env}"]
+            elif source_format.lower() == "eventhub" or source_format.lower() == "kafka":
+                source_details = source_details_file
+
+        # Get schema
+        if "silver_schema" in onboarding_row and onboarding_row["silver_schema"]:
+            schema = onboarding_row["silver_schema"]
+            logger.info(f"silver_schema={schema}")
+
+        return source_details, silver_reader_config_options, schema
+
     def __validate_append_flow(self, onboarding_row, layer):
         append_flows = onboarding_row[f"{layer}_append_flows"]
         for append_flow in append_flows:
@@ -1129,6 +1239,7 @@ class OnboardDataflowspec:
             "targetFormat",
             "targetDetails",
             "tableProperties",
+            "schema",
             "partitionColumns",
             "cdcApplyChanges",
             "applyChangesFromSnapshot",
@@ -1162,6 +1273,7 @@ class OnboardDataflowspec:
                 StructField(
                     "tableProperties", MapType(StringType(), StringType(), True), True
                 ),
+                StructField("schema", StringType(), True),
                 StructField("partitionColumns", ArrayType(StringType(), True), True),
                 StructField("cdcApplyChanges", StringType(), True),
                 StructField("applyChangesFromSnapshot", StringType(), True),
@@ -1184,8 +1296,21 @@ class OnboardDataflowspec:
             "data_flow_group",
             f"silver_database_{env}",
             "silver_table",
-            f"silver_transformation_json_{env}",
         ]  # f"silver_table_path_{env}",
+
+        # Check if this is silver-only ingestion (no transformation JSON file)
+        # by checking if source_format is cloudFiles/kafka/eventhub
+        is_silver_only = False
+        if onboarding_rows:
+            first_row = onboarding_rows[0]
+            if "source_format" in first_row:
+                source_format = first_row["source_format"]
+                if source_format and source_format.lower() in ["cloudfiles", "kafka", "eventhub"]:
+                    is_silver_only = True
+        
+        # Only require transformation JSON for traditional bronze->silver flow
+        if not is_silver_only:
+            mandatory_fields.append(f"silver_transformation_json_{env}")
 
         for onboarding_row in onboarding_rows:
             try:
@@ -1195,21 +1320,45 @@ class OnboardDataflowspec:
                 self.__validate_mandatory_fields(onboarding_row, mandatory_fields)
             silver_data_flow_spec_id = onboarding_row["data_flow_id"]
             silver_data_flow_spec_group = onboarding_row["data_flow_group"]
-            silver_reader_config_options = {}
 
             silver_target_format = "delta"
 
-            bronze_target_details = {
-                "database": onboarding_row["bronze_database_{}".format(env)],
-                "table": onboarding_row["bronze_table"],
-            }
-            bronze_cl = (
-                onboarding_row["bronze_catalog_{}".format(env)]
-                if "bronze_catalog_{}".format(env) in onboarding_row
-                else None
-            )
-            if bronze_cl:
-                bronze_target_details["catalog"] = bronze_cl
+            # For silver-only mode (cloudFiles/kafka/eventhub), bronze details are not needed
+            is_silver_only_row = False
+            if "source_format" in onboarding_row and onboarding_row["source_format"]:
+                src_fmt = onboarding_row["source_format"].lower()
+                if src_fmt in ["cloudfiles", "kafka", "eventhub"]:
+                    is_silver_only_row = True
+
+            # sourceDetails will be either bronze_target_details (traditional flow)
+            # or actual source_details from source_details field (silver-only flow)
+            if not is_silver_only_row:
+                # Traditional bronze->silver flow: populate bronze details as sourceDetails
+                bronze_target_details = {
+                    "database": onboarding_row["bronze_database_{}".format(env)],
+                    "table": onboarding_row["bronze_table"],
+                }
+                bronze_cl = (
+                    onboarding_row["bronze_catalog_{}".format(env)]
+                    if "bronze_catalog_{}".format(env) in onboarding_row
+                    else None
+                )
+                if bronze_cl:
+                    bronze_target_details["catalog"] = bronze_cl
+                if not self.uc_enabled:
+                    bronze_target_details["path"] = onboarding_row[
+                        f"bronze_table_path_{env}"
+                    ]
+                silver_source_details = bronze_target_details
+                silver_reader_config_options = {}
+                silver_schema = None
+            else:
+                # Silver-only mode: use helper method to extract source details, reader options, schema
+                bronze_target_details = None
+                silver_source_details, silver_reader_config_options, silver_schema = (
+                    self.get_silver_source_details_reader_options_schema(onboarding_row, env)
+                )
+
             silver_target_details = {
                 "database": onboarding_row["silver_database_{}".format(env)],
                 "table": onboarding_row["silver_table"],
@@ -1224,21 +1373,27 @@ class OnboardDataflowspec:
             if silver_cl:
                 silver_target_details["catalog"] = silver_cl
             if not self.uc_enabled:
-                bronze_target_details["path"] = onboarding_row[
-                    f"bronze_table_path_{env}"
-                ]
                 silver_target_details["path"] = onboarding_row[
                     f"silver_table_path_{env}"
                 ]
-            silver_reader_options_json = (
-                onboarding_row["silver_reader_options"]
-                if "silver_reader_options" in onboarding_row
-                else {}
-            )
-            if silver_reader_options_json:
-                silver_reader_config_options = self.__delete_none(
-                    silver_reader_options_json.asDict()
+
+            # For traditional bronze->silver: merge reader options if not already set
+            if not is_silver_only_row:
+                silver_reader_options_json = (
+                    onboarding_row["silver_reader_options"]
+                    if "silver_reader_options" in onboarding_row
+                    else {}
                 )
+                if silver_reader_options_json:
+                    silver_reader_config_options = self.__delete_none(
+                        silver_reader_options_json.asDict()
+                    )
+
+                # Extract schema if not already set
+                if silver_schema is None:
+                    if "silver_schema" in onboarding_row and onboarding_row["silver_schema"]:
+                        silver_schema = onboarding_row["silver_schema"]
+
             silver_table_properties = {}
             if (
                 "silver_table_properties" in onboarding_row
@@ -1253,11 +1408,20 @@ class OnboardDataflowspec:
                 "silver_partition_columns" in onboarding_row
                 and onboarding_row["silver_partition_columns"]
             ):
-                # Split if this is a list separated by commas
-                if "," in onboarding_row["silver_partition_columns"]:
-                    silver_parition_columns = onboarding_row["silver_partition_columns"].split(",")
+                partition_cols = onboarding_row["silver_partition_columns"]
+                # Handle different input types: string, list, or comma-separated string
+                if isinstance(partition_cols, str):
+                    # String input: split if comma-separated, otherwise single column
+                    if "," in partition_cols:
+                        silver_parition_columns = partition_cols.split(",")
+                    else:
+                        silver_parition_columns = [partition_cols]
+                elif isinstance(partition_cols, list):
+                    # List input (from JSON array): use directly
+                    silver_parition_columns = partition_cols
                 else:
-                    silver_parition_columns = [onboarding_row["silver_partition_columns"]]
+                    # Assume it's a Row/array type from Spark, convert to list
+                    silver_parition_columns = list(partition_cols)
 
             dlt_sinks = None
             if "silver_sinks" in onboarding_row and onboarding_row["silver_sinks"]:
@@ -1265,6 +1429,26 @@ class OnboardDataflowspec:
             silver_cluster_by = self.__get_cluster_by_properties(onboarding_row, silver_table_properties,
                                                                  "silver_cluster_by")
             silver_cluster_by_auto = self.__get_cluster_by_auto(onboarding_row, "silver_cluster_by_auto")
+
+            # Validate: Cannot use both partition columns and clustering
+            has_partition_columns = (
+                silver_parition_columns and silver_parition_columns != [""]
+            )
+            has_clustering = (
+                (silver_cluster_by and silver_cluster_by != [""]) or silver_cluster_by_auto
+            )
+            if has_partition_columns and has_clustering:
+                table_name = onboarding_row.get("silver_table", "unknown")
+                raise ValueError(
+                    f"Configuration error for table '{table_name}' (data_flow_id={silver_data_flow_spec_id}): "
+                    f"Cannot use both 'silver_partition_columns' and 'silver_cluster_by'/'silver_cluster_by_auto'. "
+                    f"Delta Lake tables support either partition columns OR liquid clustering, but not both. "
+                    f"Please choose one strategy:\n"
+                    f"  - Use 'silver_partition_columns' for traditional partitioning (static, good for time-series)\n"
+                    f"  - Use 'silver_cluster_by' or 'silver_cluster_by_auto' for liquid clustering (flexible, recommended)\n"
+                    f"Current config has: partition_columns={silver_parition_columns}, "
+                    f"cluster_by={silver_cluster_by}, cluster_by_auto={silver_cluster_by_auto}"
+                )
 
             silver_cdc_apply_changes = None
             if (
@@ -1303,7 +1487,11 @@ class OnboardDataflowspec:
                 onboarding_row, layer="silver", env=env
             )
             apply_changes_from_snapshot = None
-            source_format = "delta"
+            # For silver-only mode, use source_format from onboarding, otherwise default to "delta"
+            if is_silver_only_row and "source_format" in onboarding_row:
+                source_format = onboarding_row["source_format"]
+            else:
+                source_format = "delta"
             if ("silver_apply_changes_from_snapshot" in onboarding_row
                     and onboarding_row["silver_apply_changes_from_snapshot"]):
                 self.__validate_apply_changes_from_snapshot(onboarding_row, "silver")
@@ -1315,11 +1503,12 @@ class OnboardDataflowspec:
                 silver_data_flow_spec_id,
                 silver_data_flow_spec_group,
                 source_format,
-                bronze_target_details,
+                silver_source_details,
                 silver_reader_config_options,
                 silver_target_format,
                 silver_target_details,
                 silver_table_properties,
+                silver_schema,
                 silver_parition_columns,
                 silver_cdc_apply_changes,
                 apply_changes_from_snapshot,

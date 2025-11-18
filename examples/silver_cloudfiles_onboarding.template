@@ -1,0 +1,101 @@
+[
+{
+   "data_flow_id": "500",
+   "data_flow_group": "SILVER_ONLY",
+   "source_system": "PREPROCESSED_PARQUET",
+   "source_format": "cloudFiles",
+   "source_details": {
+      "path": "{uc_volume_path}/integration_tests/resources/data/silver_direct/products",
+      "source_metadata": {
+            "include_autoloader_metadata_column": "True",
+            "autoloader_metadata_col_name": "source_metadata",
+            "select_metadata_cols": {
+               "input_file_name": "_metadata.file_name",
+               "input_file_path": "_metadata.file_path"
+            }
+      }
+   },
+   "silver_catalog_it": "{uc_catalog_name}",
+   "silver_database_it": "{silver_schema}",
+   "silver_table": "products_silver_direct",
+   "silver_table_comment": "Products table ingested directly to silver from parquet",
+   "silver_transformation_json_it": "{uc_volume_path}/integration_tests/conf/silver_only_transformations.json",
+   "silver_reader_options": {
+      "cloudFiles.format": "csv",
+      "header": "true",
+      "cloudFiles.schemaHints": "product_id STRING, product_name STRING, category STRING, price DOUBLE, stock_quantity INT, last_updated TIMESTAMP, is_active BOOLEAN"
+   },
+   "silver_table_path_it": "{uc_volume_path}/data/silver/products_silver_direct",
+   "silver_cluster_by": ["category", "product_id"],
+   "silver_table_properties": {
+      "pipelines.reset.allowed": "false",
+      "pipelines.autoOptimize.managed": "true"
+   },
+   "silver_data_quality_expectations_json_it": "{uc_volume_path}/integration_tests/conf/dqe/products/silver_data_quality_expectations.json"
+},
+{
+   "data_flow_id": "501",
+   "data_flow_group": "SILVER_ONLY",
+   "source_system": "PREPROCESSED_PARQUET",
+   "source_format": "cloudFiles",
+   "source_details": {
+      "path": "{uc_volume_path}/integration_tests/resources/data/silver_direct/orders"
+   },
+   "silver_catalog_it": "{uc_catalog_name}",
+   "silver_database_it": "{silver_schema}",
+   "silver_table": "orders_silver_direct",
+   "silver_table_comment": "Orders table with CDC directly from parquet to silver",
+   "silver_transformation_json_it": "{uc_volume_path}/integration_tests/conf/silver_only_transformations.json",
+   "silver_reader_options": {
+      "cloudFiles.format": "csv",
+      "header": "true",
+      "cloudFiles.schemaHints": "order_id STRING, customer_id STRING, product_id STRING, quantity INT, total_amount DOUBLE, order_date TIMESTAMP, status STRING, operation STRING"
+   },
+   "silver_cdc_apply_changes": {
+      "keys": ["order_id"],
+      "sequence_by": "order_date",
+      "scd_type": "1",
+      "apply_as_deletes": "operation = 'DELETE'",
+      "except_column_list": ["operation"],
+      "flow_name": "orders_silver_direct_cdc_flow"
+   },
+   "silver_table_path_it": "{uc_volume_path}/data/silver/orders_silver_direct",
+   "silver_cluster_by_auto": true,
+   "silver_table_properties": {
+      "pipelines.reset.allowed": "false"
+   }
+},
+{
+   "data_flow_id": "502",
+   "data_flow_group": "SILVER_ONLY",
+   "source_system": "PREPROCESSED_JSON",
+   "source_format": "cloudFiles",
+   "source_details": {
+      "path": "{uc_volume_path}/integration_tests/resources/data/silver_direct/inventory"
+   },
+   "silver_catalog_it": "{uc_catalog_name}",
+   "silver_database_it": "{silver_schema}",
+   "silver_table": "inventory_silver_direct",
+   "silver_table_comment": "Inventory table with SCD Type 2 directly from JSON to silver",
+   "silver_schema": "{\"type\":\"struct\",\"fields\":[{\"name\":\"inventory_id\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"product_id\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"warehouse_id\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"quantity\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}},{\"name\":\"last_counted\",\"type\":\"timestamp\",\"nullable\":true,\"metadata\":{}},{\"name\":\"operation\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}}]}",
+   "silver_transformation_json_it": "{uc_volume_path}/integration_tests/conf/silver_only_transformations.json",
+   "silver_reader_options": {
+      "cloudFiles.format": "json",
+      "cloudFiles.inferColumnTypes": "true"
+   },
+   "silver_cdc_apply_changes": {
+      "keys": ["inventory_id"],
+      "sequence_by": "last_counted",
+      "scd_type": "2",
+      "track_history_column_list": ["quantity"],
+      "except_column_list": ["operation"],
+      "flow_name": "inventory_silver_direct_cdc_flow"
+   },
+   "silver_table_path_it": "{uc_volume_path}/data/silver/inventory_silver_direct",
+   "silver_cluster_by": ["product_id", "warehouse_id"],
+   "silver_table_properties": {
+      "pipelines.reset.allowed": "false",
+      "pipelines.autoOptimize.managed": "true"
+   }
+}
+]

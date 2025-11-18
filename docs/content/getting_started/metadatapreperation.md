@@ -21,13 +21,13 @@ conf/
 
 The `onboarding.json` file contains links to [silver_transformations.json](https://github.com/databrickslabs/dlt-meta/blob/3555aaa798881a9cfa65f89599f83d22d245d3c8/demo/conf/onboarding.template#L41C1-L42C1) and data quality expectation files [dqe](https://github.com/databrickslabs/dlt-meta/blob/3555aaa798881a9cfa65f89599f83d22d245d3c8/demo/conf/onboarding.template#L42).
 
-### onboarding.json File structure: Examples( [Autoloader](https://github.com/databrickslabs/dlt-meta/blob/main/examples/cloudfiles-onboarding.template), [Eventhub](https://github.com/databrickslabs/dlt-meta/blob/main/examples/eventhub-onboarding.template), [Kafka](https://github.com/databrickslabs/dlt-meta/blob/main/examples/kafka-onboarding.template) )
+### onboarding.json File structure: Examples( [Autoloader](https://github.com/databrickslabs/dlt-meta/blob/main/examples/cloudfiles-onboarding.template), [Eventhub](https://github.com/databrickslabs/dlt-meta/blob/main/examples/eventhub-onboarding.template), [Kafka](https://github.com/databrickslabs/dlt-meta/blob/main/examples/kafka-onboarding.template), [Silver Direct from CloudFiles](https://github.com/databrickslabs/dlt-meta/blob/main/examples/silver_cloudfiles_direct_onboarding.template) )
 `env` is your environment placeholder e.g `dev`, `prod`, `stag`
 | Field | Description |
 | :-----------: | :----------- |
 | data_flow_id | This is unique identifier for pipeline |
 | data_flow_group | This is group identifier for launching multiple pipelines under single Lakeflow Declarative Pipeline |
-| source_format | Source format e.g `cloudFiles`, `eventhub`, `kafka`, `delta`, `snapshot` |
+| source_format | Source format e.g `cloudFiles`, `eventhub`, `kafka`, `delta`, `snapshot`. **Note:** For silver layer only (bypassing bronze), you can use `cloudFiles`, `eventhub`, or `kafka` as source_format to ingest pre-processed data directly into silver tables. |
 | source_details | This map Type captures all source details for cloudfiles = `source_schema_path`, `source_path_{env}`, `source_catalog`, `source_database`, `source_metadata` For eventhub= `source_schema_path` , `eventhub.accessKeyName`, `eventhub.accessKeySecretName`, `eventhub.name` , `eventhub.secretsScopeName` , `kafka.sasl.mechanism`, `kafka.security.protocol`, `eventhub.namespace`, `eventhub.port`. For Source schema file spark DDL schema format parsing is supported <br> In case of custom schema format then write schema parsing function `bronze_schema_mapper(schema_file_path, spark):Schema` and provide to `OnboardDataflowspec` initialization <br> e.g `onboardDataFlowSpecs = OnboardDataflowspec(spark, dict_obj,bronze_schema_mapper).onboardDataFlowSpecs()`.<br> For cloudFiles option _metadata columns addtiion there is `source_metadata` tag with attributes: `include_autoloader_metadata_column` flag (`True` or `False` value) will add _metadata column to target bronze dataframe, `autoloader_metadata_col_name` if this provided then will be used to rename _metadata to this value otherwise default is `source_metadata`,`select_metadata_cols:{key:value}` will be used to extract columns from _metadata. key is target dataframe column name and value is expression used to add column from _metadata column. <br> for snapshot= `snapshot_format`, `source_path_{env}` |
 | bronze_catalog_{env} | Unity catalog name |         
 | bronze_database_{env} | Delta lake bronze database name. |
@@ -53,9 +53,12 @@ The `onboarding.json` file contains links to [silver_transformations.json](https
 | bronze_quarantine_table_properties | Lakeflow Declarative Pipeline table properties map. e.g. `{"pipelines.autoOptimize.managed": "false" , "pipelines.autoOptimize.zOrderCols": "year,month", "pipelines.reset.allowed": "false" }` |
 | bronze_append_flows | Bronze table append flows json. e.g.`"bronze_append_flows":[{"name":"customer_bronze_flow", "create_streaming_table": false,"source_format": "cloudFiles", "source_details": {"source_database": "APP","source_table":"CUSTOMERS", "source_path_dev": "tests/resources/data/customers", "source_schema_path": "tests/resources/schema/customer_schema.ddl"},"reader_options": {"cloudFiles.format": "json","cloudFiles.inferColumnTypes": "true","cloudFiles.rescuedDataColumn": "_rescued_data"},"once": true}]` |
 | silver_catalog_{env} | Unit Catalog name. |
-| silver_database_{env} | Silver database name. |
+| silver_database_{env} | Silver database name. **Note:** For silver-only ingestion (bypassing bronze), this is required along with source_format and source_details pointing to your raw data source. |
 | silver_table | Silver table name |
 | silver_table_comment | Silver table comments |
+| silver_schema | **Optional** - Silver table schema in Spark DDL JSON format. Required when using silver-only ingestion (bypassing bronze) with cloudFiles/kafka/eventhub as source_format to define the expected schema. See [examples](https://github.com/databrickslabs/dlt-meta/blob/main/examples/silver_cloudfiles_direct_onboarding.template) |
+| silver_reader_options | **Optional** - Reader options for silver layer when reading directly from source (bypassing bronze). Example for cloudFiles: `{"cloudFiles.format": "parquet", "cloudFiles.schemaLocation": "path/to/schema"}` |
+| silver_select_expressions | **Optional** - List of SQL expressions to transform data when reading into silver layer. Works for both bronze-to-silver and direct source-to-silver flows |
 | silver_partition_columns | Silver table partition columns list |
 | silver_cluster_by | Silver tables cluster by cols list |
 | silver_cluster_by_auto | Enable automatic liquid clustering on the silver table. Boolean value (true/false). Can be combined with silver_cluster_by to define initial clustering keys. See [Automatic liquid clustering](https://docs.databricks.com/aws/en/delta/clustering#auto-liquid) |
