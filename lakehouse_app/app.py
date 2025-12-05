@@ -202,7 +202,7 @@ def run_command(command_id, command, input_queue, output_queue, SHELL_FLG=False)
 
 @app.route('/')
 def index():
-    return render_template('landingPage.html')
+    return render_template('index.html')
 
 
 @app.route('/start_command', methods=['POST'])
