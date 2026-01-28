@@ -315,7 +315,7 @@ class CliTests(unittest.TestCase):
         mock_ws_installer._choice.side_effect = ['True', 'True', 'bronze_silver', 'False', 'True', 'False']
         mock_ws_installer._question.side_effect = [
             "uc_catalog", "demo/conf/onboarding.template",
-            "file:/demo/", "dlt_meta_dataflowspecs", "dltmeta_bronze", "dltmeta_silver",
+            "/demo/", "dlt_meta_dataflowspecs", "dltmeta_bronze", "dltmeta_silver",
             "bronze_dataflowspec", "silver_dataflowspec", "v1", "prod", "author", "True"
         ]
         dltmeta = DLTMeta(mock_workspace_client)
@@ -325,7 +325,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(cmd.uc_catalog_name, "uc_catalog")
         self.assertEqual(cmd.dbfs_path, None)
         self.assertEqual(cmd.onboarding_file_path, "demo/conf/onboarding.template")
-        self.assertEqual(cmd.onboarding_files_dir_path, "file:/file:/demo/")
+        self.assertEqual(cmd.onboarding_files_dir_path, "file:/demo/")
         self.assertEqual(cmd.dlt_meta_schema, "dlt_meta_dataflowspecs")
         self.assertEqual(cmd.bronze_schema, "dltmeta_bronze")
         self.assertEqual(cmd.silver_schema, "dltmeta_silver")
@@ -347,7 +347,7 @@ class CliTests(unittest.TestCase):
                                                  'bronze_silver', 'False', 'True', 'False']
         mock_ws_installer._question.side_effect = [
             'dbfs_path', "dbrx", "demo/conf/onboarding.template",
-            "file:/demo/", "dlt_meta_dataflowspecs", "dltmeta_bronze",
+            "/demo/", "dlt_meta_dataflowspecs", "dltmeta_bronze",
             "dltmeta_silver", "bronze_dataflowspec_table",
             "bronze_dataflowspec_path", "silver_dataflowspec_table",
             "silver_dataflowspec_path", "v1", "prod", "author", "True"
@@ -359,7 +359,7 @@ class CliTests(unittest.TestCase):
         self.assertFalse(cmd.serverless)
         self.assertEqual(cmd.dbfs_path, "dbfs_path")
         self.assertEqual(cmd.onboarding_file_path, "demo/conf/onboarding.template")
-        self.assertEqual(cmd.onboarding_files_dir_path, "file:/file:/demo/")
+        self.assertEqual(cmd.onboarding_files_dir_path, "file:/demo/")
         self.assertEqual(cmd.dlt_meta_schema, "dlt_meta_dataflowspecs")
         self.assertEqual(cmd.bronze_schema, "dltmeta_bronze")
         self.assertEqual(cmd.silver_schema, "dltmeta_silver")
@@ -1744,3 +1744,150 @@ class CliTests(unittest.TestCase):
                 overwrite=True,
             )
         self.assertIn("bronze_dataflowspec_path is required", str(context.exception))
+
+
+class TestFileUriHelpers(unittest.TestCase):
+    """Test cases for file URI helper functions (Issue #251)."""
+
+    def test_normalize_file_uri_unix_path(self):
+        """Test normalizing Unix file URIs."""
+        from src.cli import _normalize_file_uri_to_path
+
+        # Basic Unix path
+        self.assertEqual(_normalize_file_uri_to_path("file:/path/to/dir"), "/path/to/dir")
+
+        # Already a path (no file: prefix)
+        self.assertEqual(_normalize_file_uri_to_path("/path/to/dir"), "/path/to/dir")
+
+        # file:// URI
+        self.assertEqual(_normalize_file_uri_to_path("file:///path/to/dir"), "/path/to/dir")
+
+    def test_normalize_file_uri_windows_path(self):
+        """Test normalizing Windows file URIs (Issue #251)."""
+        from src.cli import _normalize_file_uri_to_path
+
+        # Windows path with backslashes
+        self.assertEqual(
+            _normalize_file_uri_to_path("file:/C:\\projects\\dlt-meta\\conf"),
+            "C:\\projects\\dlt-meta\\conf"
+        )
+
+        # Windows path with forward slashes
+        self.assertEqual(
+            _normalize_file_uri_to_path("file:/C:/projects/dlt-meta/conf"),
+            "C:/projects/dlt-meta/conf"
+        )
+
+        # file:/// format
+        self.assertEqual(
+            _normalize_file_uri_to_path("file:///C:/projects/dlt-meta/conf"),
+            "C:/projects/dlt-meta/conf"
+        )
+
+        # file:/// format with backslashes
+        self.assertEqual(
+            _normalize_file_uri_to_path("file:///C:\\projects\\dlt-meta\\conf"),
+            "C:\\projects\\dlt-meta\\conf"
+        )
+
+    def test_path_to_file_uri_unix(self):
+        """Test creating file URIs from Unix paths."""
+        from src.cli import _path_to_file_uri
+
+        # Unix absolute path
+        self.assertEqual(_path_to_file_uri("/path/to/dir"), "file:/path/to/dir")
+
+        # Already a file URI
+        self.assertEqual(_path_to_file_uri("file:/path/to/dir"), "file:/path/to/dir")
+
+    def test_path_to_file_uri_windows(self):
+        """Test creating file URIs from Windows paths (Issue #251)."""
+        from src.cli import _path_to_file_uri
+
+        # Windows path with backslashes
+        self.assertEqual(
+            _path_to_file_uri("C:\\projects\\dlt-meta\\conf"),
+            "file:///C:/projects/dlt-meta/conf"
+        )
+
+        # Windows path with forward slashes
+        self.assertEqual(
+            _path_to_file_uri("C:/projects/dlt-meta/conf"),
+            "file:///C:/projects/dlt-meta/conf"
+        )
+
+        # Already a file URI
+        self.assertEqual(
+            _path_to_file_uri("file:///C:/projects/dir"),
+            "file:///C:/projects/dir"
+        )
+
+    def test_roundtrip_unix(self):
+        """Test that Unix paths round-trip correctly through URI conversion."""
+        from src.cli import _path_to_file_uri, _normalize_file_uri_to_path
+
+        original_path = "/home/user/projects/demo"
+        uri = _path_to_file_uri(original_path)
+        restored_path = _normalize_file_uri_to_path(uri)
+        self.assertEqual(original_path, restored_path)
+
+    def test_roundtrip_windows(self):
+        """Test that Windows paths round-trip correctly through URI conversion (Issue #251)."""
+        from src.cli import _path_to_file_uri, _normalize_file_uri_to_path
+
+        original_path = "C:/projects/dlt-meta/conf"
+        uri = _path_to_file_uri(original_path)
+        restored_path = _normalize_file_uri_to_path(uri)
+        self.assertEqual(original_path, restored_path)
+
+    @patch("os.walk")
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("src.cli.DLTMeta._my_username", return_value="test_user")
+    def test_copy_to_uc_volume_windows_path(self, mock_my_username, mock_open_func, mock_os_walk):
+        """Test that copy_to_uc_volume handles Windows paths correctly (Issue #251)."""
+        mock_ws = MagicMock()
+        dltmeta = DLTMeta(mock_ws)
+
+        # Simulate Windows path - this is what the CLI would create
+        windows_src = "file:///C:/projects/dlt-meta/conf"
+
+        mock_os_walk.return_value = [
+            ("C:/projects/dlt-meta/conf", [], ["file1.json"]),
+        ]
+        mock_ws.files.upload = MagicMock()
+
+        dltmeta.copy_to_uc_volume(windows_src, "/Volumes/catalog/schema/volume/")
+
+        # Verify os.walk was called with a valid Windows path (not /C:...)
+        walk_call_arg = mock_os_walk.call_args[0][0]
+        self.assertFalse(
+            walk_call_arg.startswith('/C:'),
+            f"Invalid Windows path passed to os.walk: {walk_call_arg}"
+        )
+        self.assertEqual(walk_call_arg, "C:/projects/dlt-meta/conf")
+
+    @patch("os.walk")
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("src.cli.DLTMeta._my_username", return_value="test_user")
+    def test_copy_to_dbfs_windows_path(self, mock_my_username, mock_open_func, mock_os_walk):
+        """Test that copy_to_dbfs handles Windows paths correctly (Issue #251)."""
+        mock_ws = MagicMock()
+        dltmeta = DLTMeta(mock_ws)
+
+        # Simulate Windows path with backslashes
+        windows_src = "file:///C:/projects/dlt-meta/conf"
+
+        mock_os_walk.return_value = [
+            ("C:/projects/dlt-meta/conf", [], ["file1.json"]),
+        ]
+        mock_ws.dbfs.upload = MagicMock()
+
+        dltmeta.copy_to_dbfs(windows_src, "dbfs:/dlt-meta/conf/")
+
+        # Verify os.walk was called with a valid Windows path
+        walk_call_arg = mock_os_walk.call_args[0][0]
+        self.assertFalse(
+            walk_call_arg.startswith('/C:'),
+            f"Invalid Windows path passed to os.walk: {walk_call_arg}"
+        )
+        self.assertEqual(walk_call_arg, "C:/projects/dlt-meta/conf")

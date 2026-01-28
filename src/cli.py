@@ -18,6 +18,72 @@ from src.install import WorkspaceInstaller
 logger = logging.getLogger('databricks.labs.dltmeta')
 
 
+def _normalize_file_uri_to_path(file_uri: str) -> str:
+    """Convert a file URI to a normalized local filesystem path.
+
+    Handles both Unix and Windows paths correctly.
+    Examples:
+        - 'file:/path/to/dir' -> '/path/to/dir' (Unix)
+        - 'file:/C:\\projects\\dir' -> 'C:\\projects\\dir' (Windows)
+        - 'file:///C:/projects/dir' -> 'C:/projects/dir' (Windows)
+        - '/path/to/dir' -> '/path/to/dir' (already a path)
+
+    Args:
+        file_uri: A file URI or local path
+
+    Returns:
+        A normalized local filesystem path
+    """
+    if not file_uri.startswith('file:'):
+        return file_uri
+
+    # Remove 'file:' prefix
+    path = file_uri[5:]
+
+    # Remove leading slashes for file:// or file:/// URIs
+    while path.startswith('//'):
+        path = path[1:]
+
+    # Handle Windows paths: /C:\... or /C:/... -> C:\... or C:/...
+    # After removing 'file:', we may have '/C:\path' or '/C:/path'
+    if len(path) > 2 and path[0] == '/' and path[2] in (':', '|'):
+        path = path[1:]
+        # Normalize pipe to colon (file URI spec allows C| instead of C:)
+        if path[1] == '|':
+            path = path[0] + ':' + path[2:]
+
+    return path
+
+
+def _path_to_file_uri(local_path: str) -> str:
+    """Convert a local filesystem path to a file URI.
+
+    Handles both Unix and Windows paths correctly.
+    Examples:
+        - '/path/to/dir' -> 'file:/path/to/dir' (Unix)
+        - 'C:\\projects\\dir' -> 'file:///C:/projects/dir' (Windows)
+        - 'C:/projects/dir' -> 'file:///C:/projects/dir' (Windows)
+
+    Args:
+        local_path: A local filesystem path
+
+    Returns:
+        A properly formatted file URI
+    """
+    # Check if it's already a file URI
+    if local_path.startswith('file:'):
+        return local_path
+
+    # Check for Windows absolute path (e.g., C:\... or C:/...)
+    if len(local_path) > 1 and local_path[1] == ':':
+        # Windows path - use file:/// format with forward slashes
+        normalized = local_path.replace('\\', '/')
+        return f"file:///{normalized}"
+
+    # Unix path - use file: format
+    return f"file:{local_path}"
+
+
 DLT_META_RUNNER_NOTEBOOK = """
 # Databricks notebook source
 # MAGIC %pip install dlt-meta=={version}
@@ -165,7 +231,7 @@ class DLTMeta:
         return _me.user_name
 
     def copy_to_uc_volume(self, src, dst):
-        main_dir = src.replace('file:', '')
+        main_dir = _normalize_file_uri_to_path(src)
         base_dir_name = os.path.basename(os.path.normpath(main_dir))
         for root, dirs, files in os.walk(main_dir):
             for filename in files:
@@ -176,7 +242,7 @@ class DLTMeta:
 
     def copy_to_dbfs(self, src, dst):
         dst = dst.replace('//', '/')
-        main_dir = src.replace('file:', '')
+        main_dir = _normalize_file_uri_to_path(src)
         main_dir = main_dir.replace('//', '/')
         base_dir_name = None
         if main_dir.endswith('/'):
@@ -457,7 +523,7 @@ class DLTMeta:
         cwd = os.getcwd()
         onboarding_files_dir_path = self._wsi._question(
             "Provide onboarding files local directory", default=f'{cwd}/demo/')
-        onboard_cmd_dict["onboarding_files_dir_path"] = f"file:/{onboarding_files_dir_path}"
+        onboard_cmd_dict["onboarding_files_dir_path"] = _path_to_file_uri(onboarding_files_dir_path)
         onboard_cmd_dict["dlt_meta_schema"] = self._wsi._question(
             "Provide dlt meta schema name", default=f'dlt_meta_dataflowspecs_{uuid.uuid4().hex}')
         onboard_cmd_dict["bronze_schema"] = self._wsi._question(
@@ -614,7 +680,7 @@ class DLTMeta:
             'onboarding_file_path', 'demo/conf/onboarding.template'
         )
         onboarding_files_dir_path = form_data.get('local_directory', f'{os.getcwd()}/demo/')
-        onboard_cmd_dict["onboarding_files_dir_path"] = f"file:/{onboarding_files_dir_path}"
+        onboard_cmd_dict["onboarding_files_dir_path"] = _path_to_file_uri(onboarding_files_dir_path)
 
         # Get schema names
         onboard_cmd_dict["dlt_meta_schema"] = form_data.get(
