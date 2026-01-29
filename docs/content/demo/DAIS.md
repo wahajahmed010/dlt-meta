@@ -8,7 +8,7 @@ draft: false
 ### DAIS 2023 DEMO:
 #### [DAIS 2023 Session Recording](https://www.youtube.com/watch?v=WYv5haxLlfA)
 
-This demo showcases DLT-META's capabilities of creating Bronze and Silver Lakeflow Declarative pipeline with initial and incremental mode automatically.
+This demo showcases SDP-META's capabilities of creating Bronze and Silver Lakeflow Declarative pipeline with initial and incremental mode automatically.
 - Customer and Transactions feeds for initial load
 - Adds new feeds Product and Stores to existing Bronze and Silver Lakeflow Declarative pipeline with metadata changes.
 - Runs Bronze and Silver Lakeflow Declarative Pipeline for incremental load for CDC events
@@ -32,22 +32,22 @@ This demo showcases DLT-META's capabilities of creating Bronze and Silver Lakefl
     pip install flake8==6.0 delta-spark==3.0.0 pytest>=7.0.0 coverage>=7.0.0 pyspark==3.5.5
     ```
 
-4. Clone dlt-meta:
+4. Clone sdp-meta:
     ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git 
+    git clone https://github.com/databrickslabs/sdp-meta.git 
     ```
 
 5. Navigate to project directory:
     ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdpmeta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdpmeta_home
     ```
 
 7. Run the command:

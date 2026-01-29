@@ -5,16 +5,16 @@ import os
 import json
 from pyspark.sql.functions import lit, struct
 from pyspark.sql.types import StructType
-from src.dataflow_spec import BronzeDataflowSpec
-from src.pipeline_readers import PipelineReaders
-from tests.utils import DLTFrameworkTestCase
+from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec
+from databricks.labs.sdpmeta.pipeline_readers import PipelineReaders
+from tests.utils import SDPFrameworkTestCase
 from unittest.mock import MagicMock, patch
 from pyspark.sql import SparkSession
 sys.modules["dlt"] = MagicMock()
 sys.modules["pyspark.dbutils"] = MagicMock()
 
 
-from src.onboard_dataflowspec import OnboardDataflowspec
+from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
 import pyspark.sql.types as T
 
 dbutils = MagicMock()
@@ -23,7 +23,7 @@ spark = MagicMock()
 spark.readStream = MagicMock()
 
 
-class PipelineReadersTests(DLTFrameworkTestCase):
+class PipelineReadersTests(SDPFrameworkTestCase):
     """Pieline readers unit tests."""
 
     bronze_dataflow_spec_map = {
@@ -50,9 +50,9 @@ class PipelineReadersTests(DLTFrameworkTestCase):
         "sinks": None,
         "version": "v1",
         "createDate": datetime.now,
-        "createdBy": "dlt-meta-unittest",
+        "createdBy": "sdp-meta-unittest",
         "updateDate": datetime.now,
-        "updatedBy": "dlt-meta-unittest",
+        "updatedBy": "sdp-meta-unittest",
         "clusterBy": [""],
         "clusterByAuto": False,
     }
@@ -94,9 +94,9 @@ class PipelineReadersTests(DLTFrameworkTestCase):
         "sinks": None,
         "version": "v1",
         "createDate": datetime.now,
-        "createdBy": "dlt-meta-unittest",
+        "createdBy": "sdp-meta-unittest",
         "updateDate": datetime.now,
-        "updatedBy": "dlt-meta-unittest",
+        "updatedBy": "sdp-meta-unittest",
         "clusterBy": [""],
         "clusterByAuto": False,
     }
@@ -137,9 +137,9 @@ class PipelineReadersTests(DLTFrameworkTestCase):
         "sinks": None,
         "version": "v1",
         "createDate": datetime.now,
-        "createdBy": "dlt-meta-unittest",
+        "createdBy": "sdp-meta-unittest",
         "updateDate": datetime.now,
-        "updatedBy": "dlt-meta-unittest",
+        "updatedBy": "sdp-meta-unittest",
         "clusterBy": [""],
         "clusterByAuto": False,
     }
@@ -172,9 +172,9 @@ class PipelineReadersTests(DLTFrameworkTestCase):
         "sinks": None,
         "version": "v1",
         "createDate": datetime.now,
-        "createdBy": "dlt-meta-unittest",
+        "createdBy": "sdp-meta-unittest",
         "updateDate": datetime.now,
-        "updatedBy": "dlt-meta-unittest",
+        "updatedBy": "sdp-meta-unittest",
         "clusterBy": [""],
         "clusterByAuto": False,
     }

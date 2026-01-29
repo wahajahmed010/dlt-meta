@@ -10,8 +10,8 @@ from databricks.sdk.core import DatabricksError
 from databricks.sdk.service import compute
 from databricks.sdk.service.sql import EndpointInfoWarehouseType
 
-from src.install import WorkspaceInstaller
-from src.config import WorkspaceConfig
+from databricks.labs.sdpmeta.install import WorkspaceInstaller
+from databricks.labs.sdpmeta.config import WorkspaceConfig
 
 
 class TestWorkspaceInstaller(unittest.TestCase):
@@ -38,8 +38,8 @@ class TestWorkspaceInstaller(unittest.TestCase):
         self.assertEqual(installer._override_clusters, {})
         self.assertEqual(installer._dashboards, {})
 
-    @patch("src.install.logger")
-    @patch("src.install.__version__", "1.0.0")
+    @patch("databricks.labs.sdpmeta.install.logger")
+    @patch("databricks.labs.sdpmeta.install.__version__", "1.0.0")
     def test_run(self, mock_logger):
         """Test the run method."""
         installer = WorkspaceInstaller(self.mock_ws)
@@ -48,7 +48,7 @@ class TestWorkspaceInstaller(unittest.TestCase):
         with patch.object(installer, '_configure') as mock_configure:
             installer.run()
 
-        mock_logger.info.assert_called_once_with("Installing DLT-META v1.0.0")
+        mock_logger.info.assert_called_once_with("Installing SDP-META v1.0.0")
         mock_configure.assert_called_once()
 
     def test_warehouse_id_property_with_configured_warehouse(self):
@@ -166,10 +166,10 @@ class TestWorkspaceInstaller(unittest.TestCase):
         # Mock successful get_status (file exists)
         self.mock_ws.workspace.get_status.return_value = MagicMock()
 
-        with patch("src.install.logger") as mock_logger:
+        with patch("databricks.labs.sdpmeta.install.logger") as mock_logger:
             installer._configure()
 
-        mock_logger.info.assert_called_once_with("DLT META is already installed.")
+        mock_logger.info.assert_called_once_with("SDP META is already installed.")
 
     def test_configure_not_installed(self):
         """Test _configure when DLT META is not installed."""
@@ -197,9 +197,9 @@ class TestWorkspaceInstaller(unittest.TestCase):
     def test_app_property(self):
         """Test _app property."""
         installer = WorkspaceInstaller(self.mock_ws)
-        self.assertEqual(installer._app, "dlt-meta")
+        self.assertEqual(installer._app, "sdp-meta")
 
-    @patch("src.install.__version__", "1.2.3")
+    @patch("databricks.labs.sdpmeta.install.__version__", "1.2.3")
     def test_version_property(self):
         """Test _version property."""
         installer = WorkspaceInstaller(self.mock_ws)
@@ -262,7 +262,7 @@ class TestWorkspaceInstaller(unittest.TestCase):
 
     @patch("subprocess.run")
     @patch("shutil.copytree")
-    @patch("src.install.__version__", "1.0.0+dev.123")
+    @patch("databricks.labs.sdpmeta.install.__version__", "1.0.0+dev.123")
     def test_build_wheel_dev_version_with_git(self, mock_copytree, mock_subprocess):
         """Test _build_wheel method with development version and git."""
         installer = WorkspaceInstaller(self.mock_ws)

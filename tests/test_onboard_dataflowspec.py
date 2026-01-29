@@ -1,13 +1,13 @@
 """Test OnboardDataflowSpec class."""
 import copy
-from tests.utils import DLTFrameworkTestCase
-from src.onboard_dataflowspec import OnboardDataflowspec
-from src.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
+from tests.utils import SDPFrameworkTestCase
+from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
+from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
 from unittest.mock import MagicMock, patch
 from pyspark.sql import DataFrame
 
 
-class OnboardDataflowspecTests(DLTFrameworkTestCase):
+class OnboardDataflowspecTests(SDPFrameworkTestCase):
     """OnboardDataflowSpec Unit Test ."""
 
     def test_onboard_yml_bronze_dataflow_spec(self):

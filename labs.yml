@@ -1,12 +1,12 @@
 ---
-name: dlt-meta
+name: sdpmeta
 description: Metadata-driven framework based on Databricks Lakeflow Declarative Pipelines 
 install:
-  script: src/install.py
-entrypoint: src/cli.py
+  script: src/databricks/labs/sdpmeta/install.py
+entrypoint: src/databricks/labs/sdpmeta/cli.py
 min_python: 3.8
 commands:
   - name: onboard
-    description: onboards dlt-meta configuration for bronze and silver layers
+    description: onboards sdpmeta configuration for bronze and silver layers
   - name: deploy
-    description: Deploys DLT-Meta pipelines for bronze and silver layers after onboarding dataflowspecs is complete
+    description: Deploys sdpmeta pipelines for bronze and silver layers after onboarding dataflowspecs is complete

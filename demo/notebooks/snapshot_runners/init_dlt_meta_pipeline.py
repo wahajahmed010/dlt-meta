@@ -1,6 +1,6 @@
 # Databricks notebook source
-dlt_meta_whl = spark.conf.get("dlt_meta_whl")
-%pip install $dlt_meta_whl
+sdp_meta_whl = spark.conf.get("sdp_meta_whl")
+%pip install $sdp_meta_whl
 
 # COMMAND ----------
 

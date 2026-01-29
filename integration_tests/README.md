@@ -6,14 +6,14 @@
     databricks auth login --host WORKSPACE_HOST
     ```
 
-2. Clone dlt-meta:
+2. Clone sdp-meta:
     ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git
+    git clone https://github.com/databrickslabs/sdp-meta.git
     ```
 
 3. Navigate to project directory:
     ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 
 4. Create Python virtual environment:
@@ -74,7 +74,7 @@
 
     - 9c. Run the command for **kafka**
         ```commandline
-        python integration_tests/run_integration_tests.py --uc_catalog_name=<<uc catalog name>>  --source=kafka --kafka_source_topic=dlt-meta-integration-test --kafka_sink_topic=dlt-meta_inttest_topic --kafka_source_broker=host:9092 --profile=<<DEFAULT>>
+        python integration_tests/run_integration_tests.py --uc_catalog_name=<<uc catalog name>>  --source=kafka --kafka_source_topic=sdp-meta-integration-test --kafka_sink_topic=sdp-meta_inttest_topic --kafka_source_broker=host:9092 --profile=<<DEFAULT>>
         ```
     Optional secret configuration:
     ```commandline

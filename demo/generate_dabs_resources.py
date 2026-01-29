@@ -2,17 +2,17 @@
 import uuid
 import json
 import yaml
-from src.install import WorkspaceInstaller
+from databricks.labs.sdpmeta.install import WorkspaceInstaller
 from integration_tests.run_integration_tests import (
-    DLTMETARunner,
-    DLTMetaRunnerConf,
+    SDPMETARunner,
+    SDPMetaRunnerConf,
     get_workspace_api_client,
     process_arguments
 )
 import traceback
 
 
-class DLTMETADABDemo(DLTMETARunner):
+class SDPMETADABDemo(SDPMETARunner):
 
     def __init__(self, args, ws, base_dir):
         self.args = args
@@ -20,12 +20,12 @@ class DLTMETADABDemo(DLTMETARunner):
         self.wsi = WorkspaceInstaller(ws)
         self.base_dir = base_dir
 
-    def run(self, runner_conf: DLTMetaRunnerConf):
+    def run(self, runner_conf: SDPMetaRunnerConf):
         """
-        Runs the DLT-META DAB Demo by calling the necessary methods in the correct order.
+        Runs the SDP-META DAB Demo by calling the necessary methods in the correct order.
 
         Parameters:
-        - runner_conf: The DLTMetaRunnerConf object containing the runner configuration parameters.
+        - runner_conf: The SDPMetaRunnerConf object containing the runner configuration parameters.
         """
         try:
             self.initialize_uc_resources(runner_conf)
@@ -38,25 +38,25 @@ class DLTMETADABDemo(DLTMETARunner):
         # finally:
         #     self.clean_up(runner_conf)
 
-    def init_runner_conf(self) -> DLTMetaRunnerConf:
+    def init_runner_conf(self) -> SDPMetaRunnerConf:
         """
         Initialize the runner configuration for running integration tests.
 
         Returns:
         -------
-        DLTMetaRunnerConf
+        SDPMetaRunnerConf
             The initialized runner configuration.
         """
         run_id = uuid.uuid4().hex
-        runner_conf = DLTMetaRunnerConf(
+        runner_conf = SDPMetaRunnerConf(
             run_id=run_id,
             username=self.wsi._my_username,
             uc_catalog_name=self.args["uc_catalog_name"],
             int_tests_dir="demo/dabs",
-            dlt_meta_schema=f"dlt_meta_dataflowspecs_demo_{run_id}",
-            bronze_schema=f"dlt_meta_bronze_demo_{run_id}",
-            silver_schema=f"dlt_meta_silver_demo_{run_id}",
-            runners_nb_path=f"/Users/{self.wsi._my_username}/dlt_meta_demo/{run_id}",
+            sdp_meta_schema=f"sdp_meta_dataflowspecs_demo_{run_id}",
+            bronze_schema=f"sdp_meta_bronze_demo_{run_id}",
+            silver_schema=f"sdp_meta_silver_demo_{run_id}",
+            runners_nb_path=f"/Users/{self.wsi._my_username}/sdp_meta_demo/{run_id}",
             source="cloudfiles",
             env="demo",
             cloudfiles_template="demo/dabs/conf/onboarding_bronze_silver_people.template",
@@ -65,14 +65,14 @@ class DLTMETADABDemo(DLTMETARunner):
             onboarding_fanout_file_path="demo/dabs/conf/onboarding_silver_fanout_people.json",
             runners_full_local_path='./demo/dabs/notebooks/',
             test_output_file_path=(
-                f"/Users/{self.wsi._my_username}/dlt_meta_demo/"
+                f"/Users/{self.wsi._my_username}/sdp_meta_demo/"
                 f"{run_id}/demo-output.csv"
             ),
         )
 
         return runner_conf
 
-    def generate_var_people_yml(self, runner_conf: DLTMetaRunnerConf):
+    def generate_var_people_yml(self, runner_conf: SDPMetaRunnerConf):
         """Generate var_people.yml with configuration from runner_conf."""
         uc_vol_full_path = f"{runner_conf.uc_volume_path}{runner_conf.int_tests_dir}"
         var_people_content = {
@@ -87,10 +87,10 @@ class DLTMETADABDemo(DLTMETARunner):
                     "type": "string",
                     "default": runner_conf.uc_catalog_name
                 },
-                "dlt_meta_schema": {
+                "sdp_meta_schema": {
                     "description": "The schema name for the pipelines",
                     "type": "string",
-                    "default": f"{runner_conf.dlt_meta_schema}"
+                    "default": f"{runner_conf.sdp_meta_schema}"
                 },
                 "bronze_schema": {
                     "description": "The schema name for the bronze pipelines",
@@ -169,7 +169,7 @@ class DLTMETADABDemo(DLTMETARunner):
             yaml.dump(var_people_content, f, sort_keys=False, default_flow_style=False)
         print(f"Generated var_people.yml at {var_people_path}")
 
-    def generate_onboarding_files(self, runner_conf: DLTMetaRunnerConf):
+    def generate_onboarding_files(self, runner_conf: SDPMetaRunnerConf):
         string_subs = {
             "{uc_volume_path}": runner_conf.uc_volume_path,
             "{uc_catalog_name}": runner_conf.uc_catalog_name,
@@ -201,10 +201,10 @@ class DLTMETADABDemo(DLTMETARunner):
 def main():
     args = process_arguments()
     workspace_client = get_workspace_api_client(args["profile"])
-    dltmeta_afam_demo_runner = DLTMETADABDemo(args, workspace_client, "demo")
+    sdpmeta_afam_demo_runner = SDPMETADABDemo(args, workspace_client, "demo")
     print("initializing complete")
-    runner_conf = dltmeta_afam_demo_runner.init_runner_conf()
-    dltmeta_afam_demo_runner.run(runner_conf)
+    runner_conf = sdpmeta_afam_demo_runner.init_runner_conf()
+    sdpmeta_afam_demo_runner.run(runner_conf)
 
 
 if __name__ == "__main__":

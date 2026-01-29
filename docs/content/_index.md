@@ -1,5 +1,5 @@
 ---
-title: "DLT-META"
+title: "SDP-META"
 date: 2021-08-04T14:50:11-04:00
 draft: false
 
@@ -7,20 +7,20 @@ draft: false
 
 
 ## Project Overview
-`DLT-META` is a metadata-driven framework designed to work with [Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines). This framework enables the automation of bronze and silver data pipelines by leveraging metadata recorded in an onboarding JSON file. This file, known as the Dataflowspec, serves as the data flow specification, detailing the source and target metadata required for the pipelines.
+`SDP-META` is a metadata-driven framework designed to work with [Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines). This framework enables the automation of bronze and silver data pipelines by leveraging metadata recorded in an onboarding JSON file. This file, known as the Dataflowspec, serves as the data flow specification, detailing the source and target metadata required for the pipelines.
 
 In practice, a single generic pipeline reads the Dataflowspec and uses it to orchestrate and run the necessary data processing workloads. This approach streamlines the development and management of data pipelines, allowing for a more efficient and scalable data processing workflow
 
-[Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) and `DLT-META`  are designed to complement each other.  [Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) provide a declarative, intent-driven foundation for building and managing data workflows, while DLT-META adds a powerful configuration-driven layer that automates and scales pipeline creation. By combining these approaches, teams can move beyond manual coding to achieve true enterprise-level agility, governance, and efficiency, templatizing and automating pipelines for any scale of modern data-driven business
+[Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) and `SDP-META`  are designed to complement each other.  [Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) provide a declarative, intent-driven foundation for building and managing data workflows, while SDP-META adds a powerful configuration-driven layer that automates and scales pipeline creation. By combining these approaches, teams can move beyond manual coding to achieve true enterprise-level agility, governance, and efficiency, templatizing and automating pipelines for any scale of modern data-driven business
 
 
 
-### DLT-META components:
+### SDP-META components:
 
 #### Metadata Interface 
-- Capture input/output metadata in [onboarding file](https://github.com/databrickslabs/dlt-meta/blob/main/examples/onboarding.template)
-- Capture [Data Quality Rules](https://github.com/databrickslabs/dlt-meta/tree/main/examples/dqe/customers/bronze_data_quality_expectations.json)
-- Capture  processing logic as sql in [Silver transformation file](https://github.com/databrickslabs/dlt-meta/blob/main/examples/silver_transformations.json)
+- Capture input/output metadata in [onboarding file](https://github.com/databrickslabs/sdp-meta/blob/main/examples/onboarding.template)
+- Capture [Data Quality Rules](https://github.com/databrickslabs/sdp-meta/tree/main/examples/dqe/customers/bronze_data_quality_expectations.json)
+- Capture  processing logic as sql in [Silver transformation file](https://github.com/databrickslabs/sdp-meta/blob/main/examples/silver_transformations.json)
 
 #### Generic Lakeflow Declarative pipeline
 - Apply appropriate readers based on input metadata
@@ -32,20 +32,20 @@ In practice, a single generic pipeline reads the Dataflowspec and uses it to orc
 ## High-Level Solution overview:
 ![High-Level Process Flow](/images/solutions_overview.png)
 
-## How does DLT-META work?
-![DLT-META Stages](/images/dlt-meta_stages.png)
-- [Metadata Preparation](https://databrickslabs.github.io/dlt-meta/getting_started/metadatapreperation/)
+## How does SDP-META work?
+![SDP-META Stages](/images/sdp-meta_stages.png)
+- [Metadata Preparation](https://databrickslabs.github.io/sdp-meta/getting_started/metadatapreperation/)
 - Onboarding Job
-    - Option#1: [DLT-META CLI](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_cli/#onboardjob)
-    - Option#2: [Manual Job](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_manual/#onboardjob)
-    - option#3: [Databricks Notebook](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_manual/#option2-databricks-notebook)
+    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/#onboardjob)
+    - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#onboardjob)
+    - option#3: [Databricks Notebook](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#option2-databricks-notebook)
 
 - Dataflow Lakeflow Declarative Pipeline
-    - Option#1: [DLT-META CLI](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_cli/#dataflow-dlt-pipeline)
-    - Option#2: [DLT-META MANUAL](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_manual/#dataflow-dlt-pipeline)
+    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/#dataflow-dlt-pipeline)
+    - Option#2: [SDP-META MANUAL](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#dataflow-dlt-pipeline)
 
-## DLT-META `Lakeflow Declarative Pipelines` Features support
-| Features  | DLT-META Support |
+## SDP-META `Lakeflow Declarative Pipelines` Features support
+| Features  | SDP-META Support |
 | ------------- | ------------- |
 | Input data sources  | Autoloader, Delta, Eventhub, Kafka, snapshot  |
 | Medallion architecture layers | Bronze, Silver  |
@@ -56,14 +56,14 @@ In practice, a single generic pipeline reads the Dataflowspec and uses it to orc
 | [create_auto_cdc_from_snapshot_flow](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-apply-changes-from-snapshot) API support | Bronze layer|
 | [append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#use-append-flow-to-write-to-a-streaming-table-from-multiple-source-streams) API support | Bronze layer|
 | Liquid cluster support | Bronze, Bronze Quarantine, Silver tables|
-| [DLT-META CLI](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_cli/) |  ```databricks labs dlt-meta onboard```, ```databricks labs dlt-meta deploy``` |
-| Bronze and Silver pipeline chaining | Deploy dlt-meta pipeline with ```layer=bronze_silver``` option using default publishing mode |
+| [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/) |  ```databricks labs sdp-meta onboard```, ```databricks labs sdp-meta deploy``` |
+| Bronze and Silver pipeline chaining | Deploy sdp-meta pipeline with ```layer=bronze_silver``` option using default publishing mode |
 | [create_sink](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-sink) API support |Supported formats:```external delta table , kafka``` Bronze, Silver layers|
 | [Databricks Asset Bundles](https://docs.databricks.com/aws/en/dev-tools/bundles/) | Supported
-| [DLT-META UI](https://github.com/databrickslabs/dlt-meta/tree/main/lakehouse_app#dlt-meta-lakehouse-app-setup) | Uses Databricks Lakehouse DLT-META App
+| [SDP-META UI](https://github.com/databrickslabs/sdp-meta/tree/main/lakehouse_app#sdp-meta-lakehouse-app-setup) | Uses Databricks Lakehouse SDP-META App
 
 ## How much does it cost ?
-DLT-META does not have any **direct cost** associated with it other than the cost to run the Databricks Lakeflow Declarative Pipelines 
+SDP-META does not have any **direct cost** associated with it other than the cost to run the Databricks Lakeflow Declarative Pipelines 
 on your environment.The overall cost will be determined primarily by the [Databricks Lakeflow Declarative Pipelines Pricing] (https://www.databricks.com/product/pricing/lakeflow-declarative-pipelines)
 
 
