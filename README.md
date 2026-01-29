@@ -11,7 +11,7 @@
 
 ---
 
-[![Documentation](https://img.shields.io/badge/docs-passing-green)](https://databrickslabs.github.io/sdp-meta/) [![PyPI](https://img.shields.io/badge/pypi-v0.0.9-green)](https://pypi.org/project/dlt-meta/) [![Build](https://img.shields.io/github/workflow/status/databrickslabs/dlt-meta/build/main)](https://github.com/databrickslabs/dlt-meta/actions/workflows/onpush.yml) [![Coverage](https://img.shields.io/codecov/c/github/databrickslabs/dlt-meta)](https://codecov.io/gh/databrickslabs/dlt-meta) [![Style](https://img.shields.io/badge/code%20style-flake8-blue)](https://github.com/PyCQA/flake8) [![PyPI Downloads](https://static.pepy.tech/badge/sdp-meta/month)](https://pepy.tech/projects/dlt-meta)
+[![Documentation](https://img.shields.io/badge/docs-passing-green)](https://databrickslabs.github.io/sdp-meta/) [![PyPI](https://img.shields.io/badge/pypi-v0.0.10-green)](https://pypi.org/project/dlt-meta/) [![Build](https://img.shields.io/github/workflow/status/databrickslabs/dlt-meta/build/main)](https://github.com/databrickslabs/dlt-meta/actions/workflows/onpush.yml) [![Coverage](https://img.shields.io/codecov/c/github/databrickslabs/dlt-meta)](https://codecov.io/gh/databrickslabs/dlt-meta) [![Style](https://img.shields.io/badge/code%20style-flake8-blue)](https://github.com/PyCQA/flake8) [![PyPI Downloads](https://static.pepy.tech/badge/dlt-meta/month)](https://pepy.tech/projects/dlt-meta)
 
 ---
 
