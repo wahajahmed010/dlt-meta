@@ -84,3 +84,27 @@ The `onboarding.json` file contains links to [silver_transformations.json](https
 | target_partition_cols  | Specify partition columns : Type Array |
 | select_exp | Specify SQL expressions : Type Array | 
 | where_clause  | Specify filter conditions if you want to prevent certain records from main input : Type Array |
+
+### Column Comments
+
+Column-level comments enhance data discoverability in Unity Catalog.
+Use `custom_transform_func` to set column comments programmatically.
+See the [custom transform example notebook](https://github.com/databrickslabs/dlt-meta/blob/main/examples/dlt_meta_pipeline_custom_transform.ipynb) for a complete example.
+
+```python
+from pyspark.sql import DataFrame, functions as F
+
+def bronze_custom_transform_func(input_df: DataFrame, dataflow_spec) -> DataFrame:
+    column_comments = {
+        "customer_id": "Unique customer identifier",
+        "email": "Customer email address",
+    }
+    cols = []
+    for field in input_df.schema:
+        if field.name in column_comments:
+            cols.append(F.col(field.name).alias(
+                field.name, metadata={"comment": column_comments[field.name]}))
+        else:
+            cols.append(F.col(field.name))
+    return input_df.select(*cols)
+```
