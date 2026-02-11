@@ -1,14 +1,14 @@
 ---
 # DLT-META CLI (Compatibility wrapper)
-# DEPRECATED: Please migrate to sdpmeta
-name: dltmeta
-description: "[DEPRECATED] Metadata-driven framework - Please migrate to sdpmeta"
+# DEPRECATED: Please migrate to sdp-meta
+name: dlt-meta
+description: "[DEPRECATED] Metadata-driven framework - Please migrate to 'databricks labs sdp-meta'"
 install:
   script: install.py
 entrypoint: entrypoint.py
 min_python: 3.8
 commands:
   - name: onboard
-    description: "[DEPRECATED] Use 'databricks labs sdpmeta onboard' instead"
+    description: "[DEPRECATED] Please use 'databricks labs sdp-meta onboard' instead"
   - name: deploy
-    description: "[DEPRECATED] Use 'databricks labs sdpmeta deploy' instead"
+    description: "[DEPRECATED] Please use 'databricks labs sdp-meta deploy' instead"

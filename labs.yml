@@ -1,5 +1,5 @@
 ---
-name: sdpmeta
+name: sdp-meta
 description: Metadata-driven framework based on Databricks Lakeflow Declarative Pipelines 
 install:
   script: src/databricks/labs/sdpmeta/install.py
@@ -7,6 +7,6 @@ entrypoint: src/databricks/labs/sdpmeta/cli.py
 min_python: 3.8
 commands:
   - name: onboard
-    description: onboards sdpmeta configuration for bronze and silver layers
+    description: onboards sdp-meta configuration for bronze and silver layers
   - name: deploy
-    description: Deploys sdpmeta pipelines for bronze and silver layers after onboarding dataflowspecs is complete
+    description: Deploys sdp-meta pipelines for bronze and silver layers after onboarding dataflowspecs is complete
