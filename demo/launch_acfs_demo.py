@@ -54,6 +54,7 @@ class ApplyChangesFromSnapshotDemo(DLTMETARunner):
             onboarding_file_path="demo/conf/onboarding.json",
             env="demo"
         )
+        self.validate_uc_catalog_name(self.args['uc_catalog_name'])
         runner_conf.uc_catalog_name = self.args['uc_catalog_name']
         return runner_conf
 

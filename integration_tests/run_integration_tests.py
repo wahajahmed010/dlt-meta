@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import traceback
 import uuid
@@ -167,6 +168,28 @@ class DLTMETARunner:
         self.ws = ws
         self.wsi = WorkspaceInstaller(ws)
         self.base_dir = base_dir
+
+    @staticmethod
+    def validate_uc_catalog_name(name):
+        """Validate that a Unity Catalog name follows Databricks naming rules.
+
+        UC catalog names can only contain ASCII letters ('a'-'z', 'A'-'Z'),
+        digits ('0'-'9'), and underscores ('_'). Must not start with a digit.
+
+        Args:
+            name: The catalog name to validate.
+
+        Raises:
+            ValueError: If the name is empty or contains invalid characters.
+        """
+        if not name or not name.strip():
+            raise ValueError("'uc_catalog_name' must not be empty.")
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+            raise ValueError(
+                f"Invalid uc_catalog_name: '{name}'. "
+                "Can only contain ASCII letters ('a'-'z', 'A'-'Z'), "
+                "digits ('0'-'9'), and underscores ('_'). Must not start with a digit."
+            )
 
     def init_runner_conf(self) -> DLTMetaRunnerConf:
         """Initialize the runner configuration for running integration tests."""

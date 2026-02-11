@@ -101,6 +101,7 @@ class DLTMETATechSummitDemo(DLTMETARunner):
                                    else "10"),
         )
         if self.args['uc_catalog_name']:
+            self.validate_uc_catalog_name(self.args['uc_catalog_name'])
             runner_conf.uc_catalog_name = self.args['uc_catalog_name']
             runner_conf.uc_volume_name = f"{self.args['uc_catalog_name']}_volume_{run_id}"
         return runner_conf

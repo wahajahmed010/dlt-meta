@@ -48,6 +48,7 @@ class DLTMETADABDemo(DLTMETARunner):
             The initialized runner configuration.
         """
         run_id = uuid.uuid4().hex
+        self.validate_uc_catalog_name(self.args["uc_catalog_name"])
         runner_conf = DLTMetaRunnerConf(
             run_id=run_id,
             username=self.wsi._my_username,

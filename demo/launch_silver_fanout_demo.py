@@ -82,6 +82,7 @@ class DLTMETATSilverFanoutDemo(DLTMETARunner):
             onboarding_fanout_file_path="demo/conf/onboarding_fanout_cars.json",
             env="demo"
         )
+        self.validate_uc_catalog_name(self.args['uc_catalog_name'])
         runner_conf.uc_catalog_name = self.args['uc_catalog_name']
         runner_conf.uc_volume_name = f"{runner_conf.uc_catalog_name}_dlt_meta_fout_demo_{run_id}"
         return runner_conf

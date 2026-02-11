@@ -3,6 +3,7 @@
 import logging
 import json
 import os
+import re
 import sys
 import uuid
 import webbrowser
@@ -67,6 +68,13 @@ class OnboardCommand:
             raise ValueError("onboard_layer is required")
         if self.onboard_layer.lower() not in ["bronze", "silver", "bronze_silver"]:
             raise ValueError("onboard_layer must be one of bronze, silver, bronze_silver")
+        if self.uc_enabled and self.uc_catalog_name:
+            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', self.uc_catalog_name):
+                raise ValueError(
+                    f"Invalid uc_catalog_name: '{self.uc_catalog_name}'. "
+                    "Can only contain ASCII letters ('a'-'z', 'A'-'Z'), "
+                    "digits ('0'-'9'), and underscores ('_'). Must not start with a digit."
+                )
         # if self.uc_enabled == "":
         #     raise ValueError("uc_enabled is required, please set to True or False")
         if not self.uc_enabled and not self.dbfs_path:
@@ -125,6 +133,13 @@ class DeployCommand:
     def __post_init__(self):
         if self.uc_enabled and not self.uc_catalog_name:
             raise ValueError("uc_catalog_name is required")
+        if self.uc_enabled and self.uc_catalog_name:
+            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', self.uc_catalog_name):
+                raise ValueError(
+                    f"Invalid uc_catalog_name: '{self.uc_catalog_name}'. "
+                    "Can only contain ASCII letters ('a'-'z', 'A'-'Z'), "
+                    "digits ('0'-'9'), and underscores ('_'). Must not start with a digit."
+                )
         if not self.serverless and not self.num_workers:
             raise ValueError("num_workers is required")
         if not self.layer:

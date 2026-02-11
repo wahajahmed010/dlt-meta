@@ -51,6 +51,7 @@ class DLTMETADAISDemo(DLTMETARunner):
             onboarding_file_path='demo/conf/onboarding.json'
         )
         if self.args['uc_catalog_name']:
+            self.validate_uc_catalog_name(self.args['uc_catalog_name'])
             runner_conf.uc_catalog_name = self.args['uc_catalog_name']
             runner_conf.uc_volume_name = f"{runner_conf.uc_catalog_name}_dais_demo_{run_id}"
 
