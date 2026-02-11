@@ -102,8 +102,14 @@ class PipelineReaders:
 
     def get_db_utils(self):
         """Get databricks utils using DBUtils package."""
-        from pyspark.dbutils import DBUtils
-        return DBUtils(self.spark)
+        try:
+            from pyspark.dbutils import DBUtils
+            return DBUtils(self.spark)
+        except ImportError:
+            raise RuntimeError(
+                "DBUtils is not available. "
+                "Secret management features (Kafka/EventHub with secrets) require Databricks runtime."
+            )
 
     def read_kafka(self) -> DataFrame:
         """Read eventhub with dataflowspec and schema.

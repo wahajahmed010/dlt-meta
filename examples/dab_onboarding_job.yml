@@ -1,11 +1,11 @@
-# Bronze and Silver DLT Meta Onboarding for People Data
+# Bronze and Silver SDP Meta Onboarding for People Data
 # yaml-language-server: $schema=../bundle_config_schema.json
 
 resources:
   jobs:
     onboard_people:
       name: People - Onboard Job
-      description: "Job to onboard DLT META data"
+      description: "Job to onboard SDP META data"
 
       tasks:
         - task_key: onboard_bronze_silver_tables
@@ -55,7 +55,7 @@ resources:
 
     execute_pipelines_people:
       name: People - Raw_Br_Si Job
-      description: "Job to execute the Bronze and Silver DLT-META pipelines"
+      description: "Job to execute the Bronze and Silver SDP-META pipelines"
 
       tasks:
         - task_key: execute_bronze_people

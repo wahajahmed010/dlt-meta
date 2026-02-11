@@ -161,6 +161,36 @@ class SDPMeta:
         self._wsi = WorkspaceInstaller(ws)
         self.version = __about__.__version__
 
+    @staticmethod
+    def _get_schema_from_json(oc_json: dict) -> str:
+        """Read the schema key from onboarding_job_details.json with backward compatibility.
+
+        Supports both the new key ``sdpmeta_schema`` and the legacy key
+        ``dlt_meta_schema`` so that JSON files produced by either version
+        of the CLI are accepted.
+
+        Args:
+            oc_json: Parsed onboarding job details JSON dict.
+
+        Returns:
+            The schema name string.
+
+        Raises:
+            KeyError: If neither key is found in the JSON.
+        """
+        if "sdpmeta_schema" in oc_json:
+            return oc_json["sdpmeta_schema"]
+        if "dlt_meta_schema" in oc_json:
+            logger.warning(
+                "Found legacy key 'dlt_meta_schema' in onboarding_job_details.json. "
+                "Please re-run onboarding with SDP-META to update the file."
+            )
+            return oc_json["dlt_meta_schema"]
+        raise KeyError(
+            "Neither 'sdpmeta_schema' nor 'dlt_meta_schema' found in "
+            "onboarding_job_details.json. Please re-run the onboarding step."
+        )
+
     def _my_username(self):
         if not hasattr(self._ws, "_me"):
             _me = self._ws.current_user.me()
@@ -530,7 +560,7 @@ class SDPMeta:
                 "Provide sdp meta layer", ['bronze', 'silver', 'bronze_silver'])
             if deploy_cmd_dict["layer"] == "bronze" or deploy_cmd_dict["layer"] == "bronze_silver":
                 if deploy_cmd_dict["uc_enabled"]:
-                    deploy_cmd_dict["sdpmeta_bronze_schema"] = oc_job_details_json["sdpmeta_schema"]
+                    deploy_cmd_dict["sdpmeta_bronze_schema"] = self._get_schema_from_json(oc_job_details_json)
                     deploy_cmd_dict["dataflowspec_bronze_table"] = oc_job_details_json["bronze_dataflowspec_table"]
                 else:
                     deploy_cmd_dict["dataflowspec_bronze_path"] = oc_job_details_json["bronze_dataflowspec_path"]
@@ -538,7 +568,7 @@ class SDPMeta:
                     "Provide sdp meta bronze onboard group")
             if deploy_cmd_dict["layer"] == "silver" or deploy_cmd_dict["layer"] == "bronze_silver":
                 if deploy_cmd_dict["uc_enabled"]:
-                    deploy_cmd_dict["sdpmeta_silver_schema"] = oc_job_details_json["sdpmeta_schema"]
+                    deploy_cmd_dict["sdpmeta_silver_schema"] = self._get_schema_from_json(oc_job_details_json)
                     deploy_cmd_dict["dataflowspec_silver_table"] = oc_job_details_json["silver_dataflowspec_table"]
                 else:
                     deploy_cmd_dict["dataflowspec_silver_path"] = oc_job_details_json["silver_dataflowspec_path"]
@@ -680,14 +710,14 @@ class SDPMeta:
             deploy_cmd_dict["layer"] = input_params.get("layer")
             if deploy_cmd_dict["layer"] in ["bronze", "bronze_silver"]:
                 if deploy_cmd_dict["uc_enabled"]:
-                    deploy_cmd_dict["sdpmeta_bronze_schema"] = oc_job_details_json["sdpmeta_schema"]
+                    deploy_cmd_dict["sdpmeta_bronze_schema"] = self._get_schema_from_json(oc_job_details_json)
                     deploy_cmd_dict["dataflowspec_bronze_table"] = oc_job_details_json["bronze_dataflowspec_table"]
                 else:
                     deploy_cmd_dict["dataflowspec_bronze_path"] = oc_job_details_json["bronze_dataflowspec_path"]
                 deploy_cmd_dict["onboard_bronze_group"] = input_params.get("onboard_bronze_group")
             if deploy_cmd_dict["layer"] in ["silver", "bronze_silver"]:
                 if deploy_cmd_dict["uc_enabled"]:
-                    deploy_cmd_dict["sdpmeta_silver_schema"] = oc_job_details_json["sdpmeta_schema"]
+                    deploy_cmd_dict["sdpmeta_silver_schema"] = self._get_schema_from_json(oc_job_details_json)
                     deploy_cmd_dict["dataflowspec_silver_table"] = oc_job_details_json["silver_dataflowspec_table"]
                 else:
                     deploy_cmd_dict["dataflowspec_silver_path"] = oc_job_details_json["silver_dataflowspec_path"]
@@ -791,8 +821,9 @@ DLTMeta = SDPMeta
 def main(raw):
     payload = json.loads(raw)
     command = payload["command"]
+
     if command not in MAPPING:
-        msg = f"cannot find command: {command}"
+        msg = f"cannot find command: {command}. Available: {list(MAPPING.keys())}"
         raise KeyError(msg)
     flags = payload["flags"]
     log_level = flags.pop("log_level")

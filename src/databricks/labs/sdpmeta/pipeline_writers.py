@@ -1,6 +1,6 @@
 
 """
-This module contains classes for writing data to Lakeflow Declarative Pipelines  and other sinks.
+This module contains classes for writing data to Lakeflow Declarative Pipelines and other sinks.
 
 Classes:
     AppendFlowWriter: A class for writing append flows to Lakeflow Declarative Pipelines.

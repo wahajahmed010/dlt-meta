@@ -6,7 +6,7 @@ It re-exports all functionality from databricks-labs-sdpmeta and logs deprecatio
 from setuptools import setup, find_packages
 
 setup(
-    name="dlt_meta",
+    name="dlt-meta",
     version="0.0.11",
     python_requires=">=3.8",
     install_requires=[

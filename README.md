@@ -140,7 +140,7 @@ If you want to run existing demo files please follow these steps before running 
     sdp_meta_home=$(pwd)
     export PYTHONPATH=$sdp_meta_home
     ```
-![onboardingSDPMeta.gif](docs/static/images/onboardingSDPMeta.gif)
+![onboardingDLTMeta.gif](docs/static/images/onboardingDLTMeta.gif)
 
 
 7. Run onboarding command:
@@ -149,7 +149,7 @@ If you want to run existing demo files please follow these steps before running 
     ```
 
 The command will prompt you to provide onboarding details. If you have cloned the sdp-meta repository, you can accept the default values which will use the configuration from the demo folder.
-![onboardingSDPMeta_2.gif](docs/static/images/onboardingSDPMeta_2.gif)
+![onboardingDLTMeta_2.gif](docs/static/images/onboardingDLTMeta_2.gif)
 
 Above onboard cli command will:
 1. Push code and data to your Databricks workspace
@@ -165,7 +165,7 @@ Above onboard cli command will:
   ```
 The command will prompt you to provide pipeline configuration details.
 
-![deployingSDPMeta_bronze_silver.gif](docs/static/images/deployingSDPMeta_bronze_silver.gif)
+![deployingDLTMeta_bronze_silver.gif](docs/static/images/deployingDLTMeta_bronze_silver.gif)
 
 Above deploy cli command will:
 1. Deploy Lakeflow Declarative Pipeline with sdp-meta configuration like ```layer```, ```group```, ```dataflowSpec table details``` etc to your databricks workspace

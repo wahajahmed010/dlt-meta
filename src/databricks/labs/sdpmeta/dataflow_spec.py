@@ -444,8 +444,14 @@ class DataflowSpecUtils:
 
     def get_db_utils(spark):
         """Get databricks utils using DBUtils package."""
-        from pyspark.dbutils import DBUtils
-        return DBUtils(spark)
+        try:
+            from pyspark.dbutils import DBUtils
+            return DBUtils(spark)
+        except ImportError:
+            raise RuntimeError(
+                "DBUtils is not available. "
+                "Secret management features (Kafka/EventHub with secrets) require Databricks runtime."
+            )
 
     def get_sinks(sinks, spark) -> list[DLTSink]:
         """Get sink metadata."""

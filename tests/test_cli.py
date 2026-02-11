@@ -17,12 +17,12 @@ class CliTests(unittest.TestCase):
         import_author="John Doe",
         version="1.0",
         cloud="aws",
-        sdpmeta_schema="dlt_meta",
+        sdpmeta_schema="sdp_meta",
         bronze_dataflowspec_path="tests/resources/bronze_dataflowspec",
         silver_dataflowspec_path="tests/resources/silver_dataflowspec",
         uc_enabled=True,
         uc_catalog_name="uc_catalog",
-        uc_volume_path="uc_catalog/dlt_meta/files",
+        uc_volume_path="uc_catalog/sdp_meta/files",
         overwrite=True,
         bronze_dataflowspec_table="bronze_dataflowspec",
         silver_dataflowspec_table="silver_dataflowspec",
@@ -37,7 +37,7 @@ class CliTests(unittest.TestCase):
         import_author="John Doe",
         version="1.0",
         cloud="aws",
-        sdpmeta_schema="dlt_meta",
+        sdpmeta_schema="sdp_meta",
         bronze_dataflowspec_path="tests/resources/bronze_dataflowspec",
         silver_dataflowspec_path="tests/resources/silver_dataflowspec",
         uc_enabled=False,
@@ -190,12 +190,12 @@ class CliTests(unittest.TestCase):
             env="dev",
             import_author="Ravi Gawai",
             version="1.0",
-            sdpmeta_schema="dlt_meta",
+            sdpmeta_schema="sdp_meta",
             bronze_dataflowspec_path="tests/resources/bronze_dataflowspec",
             silver_dataflowspec_path="tests/resources/silver_dataflowspec",
             uc_enabled=True,
             uc_catalog_name="uc_catalog",
-            uc_volume_path="uc_catalog/dlt_meta/files",
+            uc_volume_path="uc_catalog/sdp_meta/files",
             overwrite=True,
             bronze_dataflowspec_table="bronze_dataflowspec",
             silver_dataflowspec_table="silver_dataflowspec",
@@ -207,8 +207,8 @@ class CliTests(unittest.TestCase):
         )
         expected_named_parameters = {
             "onboard_layer": "bronze_silver",
-            "database": "uc_catalog.dlt_meta" if cmd.uc_enabled else "dlt_meta",
-            "onboarding_file_path": "uc_catalog/dlt_meta/files/sdpmeta_conf/tests/resources/onboarding.json",
+            "database": "uc_catalog.sdp_meta" if cmd.uc_enabled else "sdp_meta",
+            "onboarding_file_path": "uc_catalog/sdp_meta/files/sdpmeta_conf/tests/resources/onboarding.json",
             "import_author": "Ravi Gawai",
             "version": "1.0",
             "overwrite": "True",
@@ -225,11 +225,11 @@ class CliTests(unittest.TestCase):
         mock_workspace_client.volumes.create = mock_volumes_create
         mock_volumes_create.return_value = MagicMock(
             catalog_name="uc_catalog",
-            schema_name="dlt_meta",
-            name="dlt_meta"
+            schema_name="sdp_meta",
+            name="sdp_meta"
         )
         sdpmeta = SDPMeta(mock_workspace_client)
-        volume_path = sdpmeta.create_uc_volume("uc_catalog", "dlt_meta")
+        volume_path = sdpmeta.create_uc_volume("uc_catalog", "sdp_meta")
         self.assertEqual(
             volume_path,
             f"/Volumes/{mock_volumes_create.return_value.catalog_name}/"
@@ -238,8 +238,8 @@ class CliTests(unittest.TestCase):
         )
         mock_volumes_create.assert_called_once_with(
             catalog_name="uc_catalog",
-            schema_name="dlt_meta",
-            name="dlt_meta",
+            schema_name="sdp_meta",
+            name="sdp_meta",
             volume_type=VolumeType.MANAGED
         )
 
@@ -251,12 +251,12 @@ class CliTests(unittest.TestCase):
         mock_schemas_api_instance.create.return_value = None
 
         sdpmeta = SDPMeta(mock_workspace_client)
-        sdpmeta.create_uc_schema("uc_catalog", "dlt_meta")
+        sdpmeta.create_uc_schema("uc_catalog", "sdp_meta")
 
-        mock_schemas_api_instance.get.assert_called_once_with(full_name="uc_catalog.dlt_meta")
+        mock_schemas_api_instance.get.assert_called_once_with(full_name="uc_catalog.sdp_meta")
         mock_schemas_api_instance.create.assert_called_once_with(
             catalog_name="uc_catalog",
-            name="dlt_meta",
+            name="sdp_meta",
             comment="sdp_meta framework schema"
         )
 
@@ -267,9 +267,9 @@ class CliTests(unittest.TestCase):
         mock_schemas_api_instance.get.return_value = None
 
         sdpmeta = SDPMeta(mock_workspace_client)
-        sdpmeta.create_uc_schema("uc_catalog", "dlt_meta")
+        sdpmeta.create_uc_schema("uc_catalog", "sdp_meta")
 
-        mock_schemas_api_instance.get.assert_called_once_with(full_name="uc_catalog.dlt_meta")
+        mock_schemas_api_instance.get.assert_called_once_with(full_name="uc_catalog.sdp_meta")
         mock_schemas_api_instance.create.assert_not_called()
 
     @patch("databricks.labs.sdpmeta.cli.WorkspaceClient")
@@ -291,7 +291,7 @@ class CliTests(unittest.TestCase):
         deploy_cmd = DeployCommand(
             layer="bronze",
             onboard_bronze_group="A1",
-            sdpmeta_bronze_schema="dlt_meta",
+            sdpmeta_bronze_schema="sdp_meta",
             pipeline_name="unittest_dlt_pipeline",
             dataflowspec_bronze_table="dataflowspec_table",
             dlt_target_schema="dlt_target_schema",
@@ -487,10 +487,10 @@ class CliTests(unittest.TestCase):
             import_author="John Doe",
             version="1.0",
             cloud="aws",
-            sdpmeta_schema="dlt_meta",
+            sdpmeta_schema="sdp_meta",
             uc_enabled=True,
             uc_catalog_name="uc_catalog",
-            uc_volume_path="uc_catalog/dlt_meta/files",
+            uc_volume_path="uc_catalog/sdp_meta/files",
             overwrite=True,
             bronze_dataflowspec_table="bronze_dataflowspec",
             silver_dataflowspec_table="silver_dataflowspec",
@@ -521,7 +521,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
             )
@@ -534,7 +534,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
             )
@@ -547,7 +547,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
             )
@@ -560,7 +560,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
             )
@@ -573,7 +573,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path=None,
                 uc_enabled=False,
                 overwrite=True,
@@ -587,7 +587,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 serverless=False,
                 cloud=None,
@@ -603,7 +603,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 uc_enabled=False,
                 bronze_dataflowspec_path=None,
@@ -619,7 +619,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 uc_enabled=False,
                 silver_dataflowspec_path=None,
@@ -647,7 +647,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=False,
             )
@@ -660,7 +660,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author=None,
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
             )
@@ -673,7 +673,7 @@ class CliTests(unittest.TestCase):
                 env=None,
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
             )
@@ -686,7 +686,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
                 serverless=False,
@@ -701,7 +701,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
                 serverless=False
@@ -715,7 +715,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
                 serverless=False,
@@ -730,7 +730,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
                 serverless=False,
@@ -747,7 +747,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
                 serverless=False,
@@ -765,7 +765,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
                 serverless=False,
@@ -782,7 +782,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
                 serverless=False,
@@ -799,7 +799,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 overwrite=True,
                 serverless=False,
@@ -829,7 +829,7 @@ class CliTests(unittest.TestCase):
                 onboarding_file_path="tests/resources/onboarding.json",
                 onboarding_files_dir_path="tests/resources/",
                 onboard_layer="silver",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 env="dev",
                 import_author=None,
                 version="1.0",
@@ -844,7 +844,7 @@ class CliTests(unittest.TestCase):
                 onboarding_file_path="tests/resources/onboarding.json",
                 onboarding_files_dir_path="tests/resources/",
                 onboard_layer="silver",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 env=None,
                 import_author="author",
                 version="1.0",
@@ -859,7 +859,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="dlt_target_schema",
@@ -871,7 +871,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="dlt_target_schema",
@@ -883,7 +883,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer=None,
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="dlt_target_schema",
@@ -893,7 +893,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group=None,
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="dlt_target_schema",
@@ -903,7 +903,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table=None,
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="dlt_target_schema",
@@ -913,7 +913,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name=None,
                 dlt_target_schema="dlt_target_schema",
@@ -923,7 +923,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema=None,
@@ -934,7 +934,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="dlt_target_schema",
@@ -945,7 +945,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="dlt_target_schema",
@@ -956,7 +956,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="dlt_target_schema",
@@ -967,7 +967,7 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="",
                 dlt_target_schema="dlt_target_schema",
@@ -978,14 +978,14 @@ class CliTests(unittest.TestCase):
             DeployCommand(
                 layer="bronze",
                 onboard_bronze_group="A1",
-                sdpmeta_bronze_schema="dlt_meta",
+                sdpmeta_bronze_schema="sdp_meta",
                 dataflowspec_bronze_table="dataflowspec_table",
                 pipeline_name="unittest_dlt_pipeline",
                 dlt_target_schema="",
                 num_workers=1,
             )
 
-    @patch("databricks.labs.sdpmeta.cli.DLTMeta._install_folder", return_value="/Users/test/sdp-meta")
+    @patch("databricks.labs.sdpmeta.cli.SDPMeta._install_folder", return_value="/Users/test/sdp-meta")
     @patch("databricks.labs.sdpmeta.cli.WorkspaceClient")
     def test_create_sdp_meta_pipeline_with_uc_enabled(self, mock_workspace_client, mock_install_folder):
         sdpmeta = SDPMeta(mock_workspace_client)
@@ -1010,7 +1010,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(pipeline_id, "12345")
         mock_workspace_client.pipelines.create.assert_called_once()
 
-    @patch("databricks.labs.sdpmeta.cli.DLTMeta._install_folder", return_value="/Users/test/sdp-meta")
+    @patch("databricks.labs.sdpmeta.cli.SDPMeta._install_folder", return_value="/Users/test/sdp-meta")
     @patch("databricks.labs.sdpmeta.cli.WorkspaceClient")
     def test_create_sdp_meta_pipeline_without_uc_enabled(self, mock_workspace_client, mock_install_folder):
         sdpmeta = SDPMeta(mock_workspace_client)
@@ -1036,7 +1036,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(pipeline_id, "98765")
         mock_workspace_client.pipelines.create.assert_called_once()
 
-    @patch("databricks.labs.sdpmeta.cli.DLTMeta._install_folder", return_value="/Users/test/sdp-meta")
+    @patch("databricks.labs.sdpmeta.cli.SDPMeta._install_folder", return_value="/Users/test/sdp-meta")
     @patch("databricks.labs.sdpmeta.cli.WorkspaceClient")
     def test_create_sdp_meta_pipeline_invalid_layer_raises_value_error(
         self, mock_workspace_client, mock_install_folder
@@ -1054,7 +1054,7 @@ class CliTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sdpmeta._create_sdp_meta_pipeline(cmd)
 
-    @patch("databricks.labs.sdpmeta.cli.DLTMeta._install_folder", return_value="/Users/test/sdp-meta")
+    @patch("databricks.labs.sdpmeta.cli.SDPMeta._install_folder", return_value="/Users/test/sdp-meta")
     @patch("databricks.labs.sdpmeta.cli.WorkspaceClient")
     def test_create_sdp_meta_pipeline_raise_exception_on_no_creation(self, mock_workspace_client, mock_install_folder):
         sdpmeta = SDPMeta(mock_workspace_client)
@@ -1225,7 +1225,7 @@ class CliTests(unittest.TestCase):
 
     @patch("os.walk")
     @patch("builtins.open", new_callable=mock_open)
-    @patch("databricks.labs.sdpmeta.cli.DLTMeta._my_username", return_value="test_user")
+    @patch("databricks.labs.sdpmeta.cli.SDPMeta._my_username", return_value="test_user")
     def test_copy_to_uc_volume(self, mock_my_username, mock_open, mock_os_walk):
         mock_ws = MagicMock()
         sdpmeta = SDPMeta(mock_ws)
@@ -1258,7 +1258,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 uc_enabled=False,
                 silver_dataflowspec_table=None,
@@ -1276,7 +1276,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 uc_enabled=False,
                 silver_dataflowspec_table="silver_table",
@@ -1295,7 +1295,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version=None,
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 dbfs_path="/dbfs",
                 uc_enabled=False,
                 bronze_dataflowspec_path="/path/to/bronze",
@@ -1737,7 +1737,7 @@ class CliTests(unittest.TestCase):
                 env="dev",
                 import_author="John Doe",
                 version="1.0",
-                sdpmeta_schema="dlt_meta",
+                sdpmeta_schema="sdp_meta",
                 uc_enabled=False,
                 dbfs_path="/dbfs",
                 bronze_dataflowspec_path=None,  # This should trigger the error

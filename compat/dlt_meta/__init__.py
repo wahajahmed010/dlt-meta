@@ -33,7 +33,7 @@ try:
     from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
     from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
     from databricks.labs.sdpmeta.pipeline_readers import PipelineReaders
-    from databricks.labs.sdpmeta.pipeline_writers import PipelineWriters
+    from databricks.labs.sdpmeta.pipeline_writers import AppendFlowWriter, DLTSinkWriter
     from databricks.labs.sdpmeta.install import WorkspaceInstaller
     from databricks.labs.sdpmeta.config import WorkspaceConfig
 except ImportError:

@@ -7,12 +7,9 @@ draft: false
 
 
 ## Project Overview
-`SDP-META` is a metadata-driven framework designed to work with [Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines). This framework enables the automation of bronze and silver data pipelines by leveraging metadata recorded in an onboarding JSON file. This file, known as the Dataflowspec, serves as the data flow specification, detailing the source and target metadata required for the pipelines.
+`SDP-META` is a metadata-driven framework for building automated bronze and silver data pipelines using [Databricks Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines).
 
-In practice, a single generic pipeline reads the Dataflowspec and uses it to orchestrate and run the necessary data processing workloads. This approach streamlines the development and management of data pipelines, allowing for a more efficient and scalable data processing workflow
-
-[Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) and `SDP-META`  are designed to complement each other.  [Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) provide a declarative, intent-driven foundation for building and managing data workflows, while SDP-META adds a powerful configuration-driven layer that automates and scales pipeline creation. By combining these approaches, teams can move beyond manual coding to achieve true enterprise-level agility, governance, and efficiency, templatizing and automating pipelines for any scale of modern data-driven business
-
+The framework leverages metadata recorded in an onboarding JSON file (the Dataflowspec) to automate pipeline creation. A single generic pipeline reads the Dataflowspec and uses it to orchestrate and run the necessary data processing workloads, streamlining development and enabling scalable data processing.
 
 
 ### SDP-META components:
@@ -22,12 +19,11 @@ In practice, a single generic pipeline reads the Dataflowspec and uses it to orc
 - Capture [Data Quality Rules](https://github.com/databrickslabs/sdp-meta/tree/main/examples/dqe/customers/bronze_data_quality_expectations.json)
 - Capture  processing logic as sql in [Silver transformation file](https://github.com/databrickslabs/sdp-meta/blob/main/examples/silver_transformations.json)
 
-#### Generic Lakeflow Declarative pipeline
+#### Generic Declarative Pipeline
 - Apply appropriate readers based on input metadata
-- Apply data quality rules with Lakeflow Declarative Pipelines expectations 
+- Apply data quality rules with Lakeflow Declarative Pipelines expectations
 - Apply CDC apply changes if specified in metadata
-- Builds Lakeflow Declarative Pipelines graph based on input/output metadata
-- Launch Lakeflow Declarative Pipelines pipeline
+- Builds declarative pipeline graph based on input/output metadata
 
 ## High-Level Solution overview:
 ![High-Level Process Flow](/images/solutions_overview.png)
@@ -44,27 +40,26 @@ In practice, a single generic pipeline reads the Dataflowspec and uses it to orc
     - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/#dataflow-dlt-pipeline)
     - Option#2: [SDP-META MANUAL](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#dataflow-dlt-pipeline)
 
-## SDP-META `Lakeflow Declarative Pipelines` Features support
+## SDP-META Feature Support
 | Features  | SDP-META Support |
 | ------------- | ------------- |
-| Input data sources  | Autoloader, Delta, Eventhub, Kafka, snapshot  |
-| Medallion architecture layers | Bronze, Silver  |
-| Custom transformations | Bronze, Silver layer accepts custom functions|
-| Data Quality Expecations Support | Bronze, Silver layer |
-| Quarantine table support | Bronze layer |
-| [create_auto_cdc_flow](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-apply-changes) API support | Bronze, Silver layer | 
-| [create_auto_cdc_from_snapshot_flow](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-apply-changes-from-snapshot) API support | Bronze layer|
-| [append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#use-append-flow-to-write-to-a-streaming-table-from-multiple-source-streams) API support | Bronze layer|
-| Liquid cluster support | Bronze, Bronze Quarantine, Silver tables|
-| [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/) |  ```databricks labs sdp-meta onboard```, ```databricks labs sdp-meta deploy``` |
-| Bronze and Silver pipeline chaining | Deploy sdp-meta pipeline with ```layer=bronze_silver``` option using default publishing mode |
-| [create_sink](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-sink) API support |Supported formats:```external delta table , kafka``` Bronze, Silver layers|
-| [Databricks Asset Bundles](https://docs.databricks.com/aws/en/dev-tools/bundles/) | Supported
-| [SDP-META UI](https://github.com/databrickslabs/sdp-meta/tree/main/lakehouse_app#sdp-meta-lakehouse-app-setup) | Uses Databricks Lakehouse SDP-META App
+| Input data sources (Autoloader, Delta, Eventhub, Kafka, snapshot) | Yes |
+| Medallion architecture layers (Bronze, Silver)  | Yes |
+| Custom transformations (Bronze, Silver) | Yes |
+| [append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#use-append-flow-to-write-to-a-streaming-table-from-multiple-source-streams) API support | Yes |
+| Data Quality Expectations | Yes |
+| Quarantine table support | Yes |
+| [create_auto_cdc_flow](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-apply-changes) API support | Yes |
+| [create_auto_cdc_from_snapshot_flow](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-apply-changes-from-snapshot) API support | Yes |
+| Liquid cluster support | Yes |
+| [create_sink](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-sink) API support | Yes |
+| [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/) | Yes |
+| Bronze and Silver pipeline chaining | Yes |
+| [Databricks Asset Bundles](https://docs.databricks.com/aws/en/dev-tools/bundles/) | Yes |
+| [SDP-META UI](https://github.com/databrickslabs/sdp-meta/tree/main/lakehouse_app#sdp-meta-lakehouse-app-setup) | Yes |
 
-## How much does it cost ?
-SDP-META does not have any **direct cost** associated with it other than the cost to run the Databricks Lakeflow Declarative Pipelines 
-on your environment.The overall cost will be determined primarily by the [Databricks Lakeflow Declarative Pipelines Pricing] (https://www.databricks.com/product/pricing/lakeflow-declarative-pipelines)
+## How much does it cost?
+SDP-META is open source and has no direct cost. The overall cost is determined by [Databricks Lakeflow Declarative Pipelines Pricing](https://www.databricks.com/product/pricing/lakeflow-declarative-pipelines).
 
 
 ## More questions

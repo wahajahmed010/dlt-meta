@@ -1057,8 +1057,8 @@ class DataflowPipelineTests(SDPFrameworkTestCase):
     @patch('databricks.labs.sdpmeta.pipeline_writers.dlt')
     @patch('databricks.labs.sdpmeta.dataflow_pipeline.dlt')
     def test_bronze_append_flow_positive(self,
-                                         mock_dlt,
-                                         mock_pipeline_writers_dlt,
+                                         mock_dlt_dp,
+                                         mock_dlt_pw,
                                          mock_write_to_delta,
                                          mock_create_streaming_table,
                                          ):
@@ -1067,12 +1067,9 @@ class DataflowPipelineTests(SDPFrameworkTestCase):
         mock_dlt_create_streaming_table = MagicMock(return_value=None)
         mock_append_flow = MagicMock(return_value=lambda func: func)
         mock_read_stream = MagicMock(return_value=None)
-        mock_dlt.create_streaming_table = mock_dlt_create_streaming_table
-        mock_dlt.append_flow = mock_append_flow
-        mock_dlt.read_stream = mock_read_stream
-        # Also set up mocks for pipeline_writers.dlt
-        mock_pipeline_writers_dlt.append_flow = mock_append_flow
-        mock_pipeline_writers_dlt.read_stream = mock_read_stream
+        mock_dlt_pw.create_streaming_table = mock_dlt_create_streaming_table
+        mock_dlt_pw.append_flow = mock_append_flow
+        mock_dlt_pw.read_stream = mock_read_stream
         onboarding_params_map = copy.deepcopy(self.onboarding_bronze_silver_params_map)
         onboarding_params_map['onboarding_file_path'] = self.onboarding_append_flow_json_file
         o_dfs = OnboardDataflowspec(self.spark, onboarding_params_map)

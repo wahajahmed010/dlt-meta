@@ -160,7 +160,7 @@ class TestWorkspaceInstaller(unittest.TestCase):
         self.assertEqual(short_name, "Test User")
 
     def test_configure_already_installed(self):
-        """Test _configure when DLT META is already installed."""
+        """Test _configure when SDP META is already installed."""
         installer = WorkspaceInstaller(self.mock_ws)
 
         # Mock successful get_status (file exists)
@@ -172,7 +172,7 @@ class TestWorkspaceInstaller(unittest.TestCase):
         mock_logger.info.assert_called_once_with("SDP META is already installed.")
 
     def test_configure_not_installed(self):
-        """Test _configure when DLT META is not installed."""
+        """Test _configure when SDP META is not installed."""
         installer = WorkspaceInstaller(self.mock_ws)
 
         # Mock DatabricksError for file not found
