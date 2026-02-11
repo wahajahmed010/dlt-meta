@@ -4,7 +4,7 @@ This redirects all commands to databricks.labs.sdpmeta with deprecation warnings
 """
 import sys
 import warnings
-import json
+
 
 def main(raw):
     """Main CLI entry point with deprecation warning."""
@@ -13,14 +13,14 @@ def main(raw):
     print("DEPRECATION NOTICE: 'dlt-meta' CLI is deprecated.")
     print("Please use 'databricks labs sdp-meta' instead.")
     print("=" * 60 + "\n")
-    
+
     warnings.warn(
         "'databricks labs dlt-meta' is deprecated. "
         "Please use 'databricks labs sdp-meta' instead.",
         DeprecationWarning,
         stacklevel=2
     )
-    
+
     # Forward to the actual CLI implementation
     from databricks.labs.sdpmeta.cli import main as sdp_meta_main
     return sdp_meta_main(raw)

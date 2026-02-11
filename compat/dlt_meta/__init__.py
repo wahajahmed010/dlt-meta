@@ -19,8 +19,8 @@ warnings.warn(
 # Re-export everything from databricks.labs.sdpmeta
 # This maintains full backwards compatibility
 try:
-    from databricks.labs.sdpmeta import *
-    from databricks.labs.sdpmeta.cli import (
+    from databricks.labs.sdpmeta import *  # noqa: F401, F403
+    from databricks.labs.sdpmeta.cli import (  # noqa: F401
         SDPMeta as DLTMeta,  # Alias for backwards compatibility
         OnboardCommand,
         DeployCommand,
@@ -29,13 +29,13 @@ try:
         deploy,
         main,
     )
-    from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline
-    from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
-    from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
-    from databricks.labs.sdpmeta.pipeline_readers import PipelineReaders
-    from databricks.labs.sdpmeta.pipeline_writers import AppendFlowWriter, DLTSinkWriter
-    from databricks.labs.sdpmeta.install import WorkspaceInstaller
-    from databricks.labs.sdpmeta.config import WorkspaceConfig
+    from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline  # noqa: F401
+    from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec  # noqa: F401
+    from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec  # noqa: F401
+    from databricks.labs.sdpmeta.pipeline_readers import PipelineReaders  # noqa: F401
+    from databricks.labs.sdpmeta.pipeline_writers import AppendFlowWriter, DLTSinkWriter  # noqa: F401
+    from databricks.labs.sdpmeta.install import WorkspaceInstaller  # noqa: F401
+    from databricks.labs.sdpmeta.config import WorkspaceConfig  # noqa: F401
 except ImportError:
     # If databricks.labs.sdpmeta module not available, this is being run standalone
     pass

@@ -7,6 +7,7 @@ import warnings
 
 logger = logging.getLogger("databricks.labs.dlt-meta.install")
 
+
 def main():
     """Main installation entry point."""
     warnings.warn(
@@ -18,7 +19,7 @@ def main():
         DeprecationWarning,
         stacklevel=2
     )
-    
+
     print("\n" + "=" * 60)
     print("DEPRECATION NOTICE")
     print("=" * 60)
@@ -30,12 +31,12 @@ def main():
     print("")
     print("Your existing configurations will continue to work.")
     print("=" * 60 + "\n")
-    
+
     # Proceed with installation by calling sdpmeta install
     try:
         from databricks.labs.sdpmeta.install import WorkspaceInstaller
         from databricks.sdk import WorkspaceClient
-        
+
         ws = WorkspaceClient(product="dlt-meta")  # Keep old product name for backwards compat
         installer = WorkspaceInstaller(ws)
         installer.run()
