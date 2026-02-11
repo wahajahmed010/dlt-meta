@@ -964,3 +964,22 @@ class OnboardDataflowspecTests(SDPFrameworkTestCase):
             )
         )
         self.assertEqual(quarantine_target_details.get("cluster_by_auto"), False)
+
+    def test_unsupported_source_format_raises_exception(self):
+        """Test that unsupported source_format raises an Exception during bronze onboarding."""
+        onboard_dfs = OnboardDataflowspec(self.spark, self.onboarding_bronze_silver_params_map)
+        onboarding_row = {
+            "data_flow_id": "test_flow",
+            "data_flow_group": "A1",
+            "source_format": "parquet",
+            "source_system": "TEST",
+            "bronze_table": "test_table",
+            "bronze_database_dev": "bronze_db",
+            "source_details": {"path": "/tmp/test"},
+        }
+        onboarding_df = self.spark.createDataFrame([onboarding_row])
+        with self.assertRaises(Exception) as context:
+            onboard_dfs._OnboardDataflowspec__get_bronze_dataflow_spec_dataframe(
+                onboarding_df, "dev"
+            )
+        self.assertIn("not supported in SDP-META", str(context.exception))

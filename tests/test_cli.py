@@ -1744,3 +1744,25 @@ class CliTests(unittest.TestCase):
                 overwrite=True,
             )
         self.assertIn("bronze_dataflowspec_path is required", str(context.exception))
+
+    def test_get_schema_from_json_with_sdpmeta_key(self):
+        """Test _get_schema_from_json returns value for sdpmeta_schema key."""
+        oc_json = {"sdpmeta_schema": "my_schema"}
+        result = SDPMeta._get_schema_from_json(oc_json)
+        self.assertEqual(result, "my_schema")
+
+    def test_get_schema_from_json_with_legacy_dlt_meta_key(self):
+        """Test _get_schema_from_json returns value for legacy dlt_meta_schema key."""
+        oc_json = {"dlt_meta_schema": "legacy_schema"}
+        with self.assertLogs('databricks.labs.sdpmeta', level='WARNING') as cm:
+            result = SDPMeta._get_schema_from_json(oc_json)
+        self.assertEqual(result, "legacy_schema")
+        self.assertTrue(any("legacy key 'dlt_meta_schema'" in msg for msg in cm.output))
+
+    def test_get_schema_from_json_missing_key_raises(self):
+        """Test _get_schema_from_json raises KeyError when neither key is present."""
+        oc_json = {"some_other_key": "value"}
+        with self.assertRaises(KeyError) as context:
+            SDPMeta._get_schema_from_json(oc_json)
+        self.assertIn("sdpmeta_schema", str(context.exception))
+        self.assertIn("dlt_meta_schema", str(context.exception))

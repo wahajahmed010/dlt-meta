@@ -403,6 +403,22 @@ class PipelineReadersTests(SDPFrameworkTestCase):
         dbutils = pipeline_readers.get_db_utils()
         self.assertIsNotNone(dbutils)
 
+    def test_get_db_utils_import_error(self):
+        """Test get_db_utils raises RuntimeError when DBUtils is not available."""
+        bronze_map = PipelineReadersTests.bronze_kafka_dataflow_spec_map
+        bronze_dataflow_spec = BronzeDataflowSpec(**bronze_map)
+        pipeline_readers = PipelineReaders(
+            self.spark,
+            bronze_dataflow_spec.sourceFormat,
+            bronze_dataflow_spec.sourceDetails,
+            bronze_dataflow_spec.readerConfigOptions,
+            bronze_dataflow_spec.schema
+        )
+        with patch.dict(sys.modules, {"pyspark.dbutils": None}):
+            with self.assertRaises(RuntimeError) as context:
+                pipeline_readers.get_db_utils()
+            self.assertIn("DBUtils is not available", str(context.exception))
+
     @patch.object(SparkSession, "readStream", return_value={"called"})
     @patch.object(dbutils, "secrets.get", return_value={"called"})
     def test_kafka_positive(self, SparkSession, dbutils):

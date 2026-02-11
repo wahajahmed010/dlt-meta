@@ -750,3 +750,10 @@ class DataFlowSpecTests(SDPFrameworkTestCase):
         # Should have null values for explicitly set null optional attributes
         self.assertEqual(result[0].select_exp, None)
         self.assertEqual(result[0].where_clause, None)
+
+    def test_get_db_utils_import_error(self):
+        """Test get_db_utils raises RuntimeError when DBUtils is not available."""
+        with patch.dict(sys.modules, {"pyspark.dbutils": None}):
+            with self.assertRaises(RuntimeError) as context:
+                DataflowSpecUtils.get_db_utils(self.spark)
+            self.assertIn("DBUtils is not available", str(context.exception))
