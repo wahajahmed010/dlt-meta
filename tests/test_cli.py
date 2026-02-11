@@ -1303,6 +1303,80 @@ class CliTests(unittest.TestCase):
             )
         self.assertIn("version is required", str(context.exception))
 
+    def test_onboard_command_invalid_uc_catalog_name(self):
+        """Test OnboardCommand rejects invalid uc_catalog_name per Databricks identifier rules."""
+        invalid_names = ["my-catalog", "1starts_with_digit", "has space", "dot.name", "sp@cial"]
+        for name in invalid_names:
+            with self.assertRaises(ValueError) as context:
+                OnboardCommand(
+                    onboarding_file_path="tests/resources/onboarding.json",
+                    onboarding_files_dir_path="tests/resources/",
+                    onboard_layer="bronze",
+                    env="dev",
+                    import_author="John Doe",
+                    version="1.0",
+                    dlt_meta_schema="dlt_meta",
+                    uc_enabled=True,
+                    uc_catalog_name=name,
+                    serverless=True,
+                    bronze_dataflowspec_table="bronze_dataflowspec",
+                    overwrite=True,
+                )
+            self.assertIn("Invalid uc_catalog_name", str(context.exception))
+
+        # Valid names should NOT raise
+        valid_names = ["my_catalog", "Catalog1", "_private", "ABC_123"]
+        for name in valid_names:
+            cmd = OnboardCommand(
+                onboarding_file_path="tests/resources/onboarding.json",
+                onboarding_files_dir_path="tests/resources/",
+                onboard_layer="bronze",
+                env="dev",
+                import_author="John Doe",
+                version="1.0",
+                dlt_meta_schema="dlt_meta",
+                uc_enabled=True,
+                uc_catalog_name=name,
+                serverless=True,
+                bronze_dataflowspec_table="bronze_dataflowspec",
+                overwrite=True,
+            )
+            self.assertEqual(cmd.uc_catalog_name, name)
+
+    def test_deploy_command_invalid_uc_catalog_name(self):
+        """Test DeployCommand rejects invalid uc_catalog_name per Databricks identifier rules."""
+        invalid_names = ["my-catalog", "1starts_with_digit", "has space", "dot.name", "sp@cial"]
+        for name in invalid_names:
+            with self.assertRaises(ValueError) as context:
+                DeployCommand(
+                    layer="bronze",
+                    onboard_bronze_group="A1",
+                    dlt_meta_bronze_schema="dlt_meta",
+                    dataflowspec_bronze_table="dataflowspec_table",
+                    pipeline_name="test_pipeline",
+                    dlt_target_schema="target_schema",
+                    uc_enabled=True,
+                    uc_catalog_name=name,
+                    serverless=True,
+                )
+            self.assertIn("Invalid uc_catalog_name", str(context.exception))
+
+        # Valid names should NOT raise
+        valid_names = ["my_catalog", "Catalog1", "_private", "ABC_123"]
+        for name in valid_names:
+            cmd = DeployCommand(
+                layer="bronze",
+                onboard_bronze_group="A1",
+                dlt_meta_bronze_schema="dlt_meta",
+                dataflowspec_bronze_table="dataflowspec_table",
+                pipeline_name="test_pipeline",
+                dlt_target_schema="target_schema",
+                uc_enabled=True,
+                uc_catalog_name=name,
+                serverless=True,
+            )
+            self.assertEqual(cmd.uc_catalog_name, name)
+
     def test_deploy_command_validation_cases(self):
         """Test DeployCommand validation cases for missing coverage."""
         # Test bronze layer without dataflowspec_bronze_table when uc_enabled=True (line 136)
