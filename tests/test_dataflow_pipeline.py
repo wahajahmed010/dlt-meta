@@ -663,7 +663,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         target_path_uc, target_table_uc, target_table_name_uc = pipeline_uc._get_target_table_info()
         expected_comment_uc = pipeline_uc._get_table_comment(target_table_uc, is_bronze=False)
         self.assertEqual(args[0], pipeline_uc.write_to_delta)
-        self.assertEqual(kwargs["name"], target_table_name_uc)
+        self.assertEqual(kwargs["name"], target_table_uc)
         self.assertIsNone(target_path_uc)
         self.assertIsNone(kwargs["path"])
         self.assertEqual(kwargs["comment"], expected_comment_uc)
@@ -684,7 +684,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         mock_dlt_table.assert_called_once()
         args, kwargs = mock_dlt_table.call_args
         self.assertEqual(args[0], pipeline_no_uc.write_to_delta)
-        self.assertEqual(kwargs["name"], target_table_name_no_uc)
+        self.assertEqual(kwargs["name"], target_table_no_uc)
         self.assertEqual(kwargs["path"], target_path_no_uc)
         self.assertEqual(kwargs["comment"], expected_comment_no_uc)
 
@@ -814,7 +814,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         _, kwargs = mock_dlt_table.call_args_list[0]
         target_path_actual, target_table, target_table_name = pipeline._get_target_table_info()
         expected_comment = pipeline._get_table_comment(target_table, is_bronze=True)
-        self.assertEqual(kwargs["name"], target_table_name)
+        self.assertEqual(kwargs["name"], target_table)
         expected_table_properties = (
             dict(bronze_dataflow_spec.tableProperties)
             if bronze_dataflow_spec.tableProperties
