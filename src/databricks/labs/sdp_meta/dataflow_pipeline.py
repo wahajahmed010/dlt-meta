@@ -328,6 +328,8 @@ class DataflowPipeline:
             input_df = pipeline_reader.read_dlt_delta()
         elif bronze_dataflow_spec.sourceFormat == "eventhub" or bronze_dataflow_spec.sourceFormat == "kafka":
             input_df = pipeline_reader.read_kafka()
+        elif bronze_dataflow_spec.sourceFormat == "sqlserver":
+            input_df = pipeline_reader.read_sqlserver()
         else:
             raise Exception(f"{bronze_dataflow_spec.sourceFormat} source format not supported")
         return self.apply_custom_transform_fun(input_df)
