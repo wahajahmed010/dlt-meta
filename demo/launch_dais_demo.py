@@ -1,7 +1,7 @@
 import uuid
 import traceback
 from databricks.sdk.service import jobs, compute
-from databricks.labs.sdpmeta.install import WorkspaceInstaller
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 from integration_tests.run_integration_tests import (
     SDPMETARunner,
     SDPMetaRunnerConf,
@@ -64,7 +64,7 @@ class SDPMETADAISDemo(SDPMETARunner):
         - runner_conf: SDPMetaRunnerConf object
         """
         try:
-            self.init_sdpmeta_runner_conf(runner_conf)
+            self.init_sdp_meta_runner_conf(runner_conf)
             self.create_bronze_silver_dlt(runner_conf)
             self.launch_workflow(runner_conf)
         except Exception as e:
@@ -93,7 +93,7 @@ class SDPMETADAISDemo(SDPMETARunner):
         Returns:
         - created_job: created job object
         """
-        sdpmeta_environments = [
+        sdp_meta_environments = [
             jobs.JobEnvironment(
                 environment_key="dl_meta_int_env",
                 spec=compute.Environment(
@@ -103,8 +103,8 @@ class SDPMETADAISDemo(SDPMETARunner):
             )
         ]
         return self.ws.jobs.create(
-            name=f"sdpmeta_dais_demo-{runner_conf.run_id}",
-            environments=sdpmeta_environments,
+            name=f"sdp_meta_dais_demo-{runner_conf.run_id}",
+            environments=sdp_meta_environments,
             tasks=[
                 jobs.Task(
                     task_key="setup_sdp_meta_pipeline_spec",
@@ -112,7 +112,7 @@ class SDPMETADAISDemo(SDPMETARunner):
                     environment_key="dl_meta_int_env",
                     timeout_seconds=0,
                     python_wheel_task=jobs.PythonWheelTask(
-                        package_name="databricks_labs_sdpmeta",
+                        package_name="databricks_labs_sdp_meta",
                         entry_point="run",
                         named_parameters={
                             "onboard_layer": "bronze_silver",
@@ -182,9 +182,9 @@ def main():
     """Entry method to run integration tests."""
     args = process_arguments()
     workspace_client = get_workspace_api_client(args['profile'])
-    sdpmeta_dais_demo_runner = SDPMETADAISDemo(args, workspace_client, "demo")
-    runner_conf = sdpmeta_dais_demo_runner.init_runner_conf()
-    sdpmeta_dais_demo_runner.run(runner_conf)
+    sdp_meta_dais_demo_runner = SDPMETADAISDemo(args, workspace_client, "demo")
+    runner_conf = sdp_meta_dais_demo_runner.init_runner_conf()
+    sdp_meta_dais_demo_runner.run(runner_conf)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 import uuid
 import json
 import yaml
-from databricks.labs.sdpmeta.install import WorkspaceInstaller
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 from integration_tests.run_integration_tests import (
     SDPMETARunner,
     SDPMetaRunnerConf,
@@ -201,10 +201,10 @@ class SDPMETADABDemo(SDPMETARunner):
 def main():
     args = process_arguments()
     workspace_client = get_workspace_api_client(args["profile"])
-    sdpmeta_afam_demo_runner = SDPMETADABDemo(args, workspace_client, "demo")
+    sdp_meta_afam_demo_runner = SDPMETADABDemo(args, workspace_client, "demo")
     print("initializing complete")
-    runner_conf = sdpmeta_afam_demo_runner.init_runner_conf()
-    sdpmeta_afam_demo_runner.run(runner_conf)
+    runner_conf = sdp_meta_afam_demo_runner.init_runner_conf()
+    sdp_meta_afam_demo_runner.run(runner_conf)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """Setup file for dlt-meta compatibility wrapper.
 
-This package provides backwards compatibility for users migrating from dlt-meta to databricks-labs-sdpmeta.
-It re-exports all functionality from databricks-labs-sdpmeta and logs deprecation warnings.
+This package provides backwards compatibility for users migrating from dlt-meta to databricks-labs-sdp-meta.
+It re-exports all functionality from databricks-labs-sdp-meta and logs deprecation warnings.
 """
 from setuptools import setup, find_packages
 
@@ -10,7 +10,7 @@ setup(
     version="0.0.11",
     python_requires=">=3.8",
     install_requires=[
-        "databricks-labs-sdpmeta>=0.0.11",  # Depends on the new primary package
+        "databricks-labs-sdp-meta>=0.0.11",  # Depends on the new primary package
     ],
     author="Ravi Gawai",
     author_email="databrickslabs@databricks.com",

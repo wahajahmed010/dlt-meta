@@ -7,7 +7,7 @@ Classes:
     DLTSinkWriter: A class for writing data to various sinks using Lakeflow Declarative Pipelines.
 
 """
-from databricks.labs.sdpmeta.dataflow_spec import DataflowSpecUtils, DLTSink
+from databricks.labs.sdp_meta.dataflow_spec import DataflowSpecUtils, DLTSink
 import dlt
 
 

@@ -47,8 +47,8 @@ This demo will perform following steps:
 
 6. Set python environment variable into terminal:
     ```commandline
-    sdpmeta_home=$(pwd)
-    export PYTHONPATH=$sdpmeta_home
+    sdp_meta_home=$(pwd)
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. Configure Kafka (Optional):

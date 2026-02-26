@@ -8,7 +8,7 @@ Classes:
 
 Methods:
 - init_runner_conf(): Initializes the TechsummitRunnerConf object with the provided configuration parameters.
-- init_sdpmeta_runner_conf(runner_conf): Initializes the SDP-META runner configuration by uploading the necessary files
+- init_sdp_meta_runner_conf(runner_conf): Initializes the SDP-META runner configuration by uploading the necessary files
   and creating the required schemas and volumes.
 - run(runner_conf): Runs the SDP-META Techsummit Demo by calling the necessary methods in the correct order.
 - launch_workflow(runner_conf): Launches the workflow for the Techsummit Demo by creating the necessary tasks and
@@ -26,7 +26,7 @@ import uuid
 import traceback
 from databricks.sdk.service import jobs, compute
 from dataclasses import dataclass
-from databricks.labs.sdpmeta.install import WorkspaceInstaller
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 from integration_tests.run_integration_tests import (
     SDPMETARunner,
     SDPMetaRunnerConf,
@@ -130,7 +130,7 @@ class SDPMETATechSummitDemo(SDPMETARunner):
         - runner_conf: The SDPMetaRunnerConf object containing the runner configuration parameters.
         """
         try:
-            self.init_sdpmeta_runner_conf(runner_conf)
+            self.init_sdp_meta_runner_conf(runner_conf)
             self.create_bronze_silver_dlt(runner_conf)
             self.launch_workflow(runner_conf)
         except Exception as e:
@@ -159,7 +159,7 @@ class SDPMETATechSummitDemo(SDPMETARunner):
         Returns:
         - created_job: The created job object.
         """
-        sdpmeta_environments = [
+        sdp_meta_environments = [
             jobs.JobEnvironment(
                 environment_key="dl_meta_int_env",
                 spec=compute.Environment(
@@ -170,7 +170,7 @@ class SDPMETATechSummitDemo(SDPMETARunner):
         ]
         return self.ws.jobs.create(
             name=f"sdp-meta-techsummit-demo-{runner_conf.run_id}",
-            environments=sdpmeta_environments,
+            environments=sdp_meta_environments,
             tasks=[
                 jobs.Task(
                     task_key="generate_data",
@@ -198,7 +198,7 @@ class SDPMETATechSummitDemo(SDPMETARunner):
                     environment_key="dl_meta_int_env",
                     timeout_seconds=0,
                     python_wheel_task=jobs.PythonWheelTask(
-                        package_name="databricks_labs_sdpmeta",
+                        package_name="databricks_labs_sdp_meta",
                         entry_point="run",
                         named_parameters={
                             "onboard_layer": "bronze_silver",
@@ -249,10 +249,10 @@ techsummit_mandatory_args = ["uc_catalog_name"]
 def main():
     args = process_arguments()
     workspace_client = get_workspace_api_client(args["profile"])
-    sdpmeta_techsummit_demo_runner = SDPMETATechSummitDemo(args, workspace_client, "demo")
+    sdp_meta_techsummit_demo_runner = SDPMETATechSummitDemo(args, workspace_client, "demo")
     print("initializing complete")
-    runner_conf = sdpmeta_techsummit_demo_runner.init_runner_conf()
-    sdpmeta_techsummit_demo_runner.run(runner_conf)
+    runner_conf = sdp_meta_techsummit_demo_runner.init_runner_conf()
+    sdp_meta_techsummit_demo_runner.run(runner_conf)
 
 
 if __name__ == "__main__":

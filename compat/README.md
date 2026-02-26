@@ -1,11 +1,11 @@
 # DLT-META Compatibility Package
 
-> **⚠️ DEPRECATED**: This package is a backwards-compatibility wrapper. Please migrate to `databricks-labs-sdpmeta`.
+> **⚠️ DEPRECATED**: This package is a backwards-compatibility wrapper. Please migrate to `databricks-labs-sdp-meta`.
 
 ## Overview
 
 This package (`dlt-meta`) is maintained for backwards compatibility with existing installations.
-All functionality has been moved to the `databricks-labs-sdpmeta` package.
+All functionality has been moved to the `databricks-labs-sdp-meta` package.
 
 ## Migration Guide
 
@@ -18,7 +18,7 @@ pip install dlt-meta
 
 With:
 ```bash
-pip install databricks-labs-sdpmeta
+pip install databricks-labs-sdp-meta
 ```
 
 ### CLI Commands
@@ -44,8 +44,8 @@ The old imports will continue to work with deprecation warnings:
 from dlt_meta.cli import DLTMeta
 
 # New (recommended)
-from databricks.labs.sdpmeta.cli import SDPMeta
-from databricks.labs.sdpmeta import DataflowPipeline
+from databricks.labs.sdp_meta.cli import SDPMeta
+from databricks.labs.sdp_meta import DataflowPipeline
 ```
 
 ### Configuration Files

@@ -2,7 +2,7 @@
 import uuid
 import traceback
 from databricks.sdk.service import jobs, compute
-from databricks.labs.sdpmeta.install import WorkspaceInstaller
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 from integration_tests.run_integration_tests import (
     SDPMETARunner,
     SDPMetaRunnerConf,
@@ -45,7 +45,7 @@ class SDPMETASilverFanoutDemo(SDPMETARunner):
         - runner_conf: The SDPMetaRunnerConf object containing the runner configuration parameters.
         """
         try:
-            self.init_sdpmeta_runner_conf(runner_conf)
+            self.init_sdp_meta_runner_conf(runner_conf)
             self.create_bronze_silver_dlt(runner_conf)
             self.launch_workflow(runner_conf)
         except Exception as e:
@@ -100,7 +100,7 @@ class SDPMETASilverFanoutDemo(SDPMETARunner):
         Returns:
         - created_job: The created job object.
         """
-        sdpmeta_environments = [
+        sdp_meta_environments = [
             jobs.JobEnvironment(
                 environment_key="dl_meta_int_env",
                 spec=compute.Environment(
@@ -111,7 +111,7 @@ class SDPMETASilverFanoutDemo(SDPMETARunner):
         ]
         return self.ws.jobs.create(
             name=f"dlt-silver-fanout-demo-{runner_conf.run_id}",
-            environments=sdpmeta_environments,
+            environments=sdp_meta_environments,
             tasks=[
                 jobs.Task(
                     task_key="onboarding_job",
@@ -119,7 +119,7 @@ class SDPMETASilverFanoutDemo(SDPMETARunner):
                     environment_key="dl_meta_int_env",
                     timeout_seconds=0,
                     python_wheel_task=jobs.PythonWheelTask(
-                        package_name="databricks_labs_sdpmeta",
+                        package_name="databricks_labs_sdp_meta",
                         entry_point="run",
                         named_parameters={
                             "onboard_layer": "bronze_silver",
@@ -143,7 +143,7 @@ class SDPMETASilverFanoutDemo(SDPMETARunner):
                     environment_key="dl_meta_int_env",
                     timeout_seconds=0,
                     python_wheel_task=jobs.PythonWheelTask(
-                        package_name="databricks_labs_sdpmeta",
+                        package_name="databricks_labs_sdp_meta",
                         entry_point="run",
                         named_parameters={
                             "onboard_layer": "silver",
@@ -180,10 +180,10 @@ class SDPMETASilverFanoutDemo(SDPMETARunner):
 def main():
     args = process_arguments()
     workspace_client = get_workspace_api_client(args['profile'])
-    sdpmeta_afam_demo_runner = SDPMETASilverFanoutDemo(args, workspace_client, "demo")
+    sdp_meta_afam_demo_runner = SDPMETASilverFanoutDemo(args, workspace_client, "demo")
     print("initializing complete")
-    runner_conf = sdpmeta_afam_demo_runner.init_runner_conf()
-    sdpmeta_afam_demo_runner.run(runner_conf)
+    runner_conf = sdp_meta_afam_demo_runner.init_runner_conf()
+    sdp_meta_afam_demo_runner.run(runner_conf)
 
 
 if __name__ == "__main__":

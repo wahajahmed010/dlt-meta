@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pyspark.sql import SparkSession
 from delta.pip_utils import configure_spark_with_delta_pip
-from databricks.labs.sdpmeta.metastore_ops import DeltaPipelinesMetaStoreOps, DeltaPipelinesInternalTableOps
+from databricks.labs.sdp_meta.metastore_ops import DeltaPipelinesMetaStoreOps, DeltaPipelinesInternalTableOps
 
 
 class SDPFrameworkTestCase(unittest.TestCase):

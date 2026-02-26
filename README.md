@@ -59,7 +59,7 @@ In practice, a single generic pipeline reads the Dataflowspec and uses it to orc
 | [create_auto_cdc_from_snapshot_flow](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-apply-changes-from-snapshot) API support | Bronze layer|
 | [append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#use-append-flow-to-write-to-a-streaming-table-from-multiple-source-streams) API support | Bronze layer|
 | Liquid cluster support | Bronze, Bronze Quarantine, Silver tables|
-| [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/) |  ```databricks labs sdp-meta onboard```, ```databricks labs sdp-meta deploy``` |
+| [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/) |  ```databricks labs sdp-meta onboard```, ```databricks labs sdp-meta deploy``` |
 | Bronze and Silver pipeline chaining | Deploy sdp-meta pipeline with ```layer=bronze_silver``` option using default publishing mode |
 | [create_sink](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-sink) API support |Supported formats:```external delta table , kafka``` Bronze, Silver layers|
 | [Databricks Asset Bundles](https://docs.databricks.com/aws/en/dev-tools/bundles/) | Supported

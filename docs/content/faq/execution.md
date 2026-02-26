@@ -30,8 +30,8 @@ SDP-META uses data_flow_group to launch Lakeflow Declarative Pipelines, so all t
 Yes! Please follow below steps:
 1. Bronze Metadata preparation ([example](https://github.com/databrickslabs/sdp-meta/blob/main/examples/bronze_onboarding.template))
 2. Onboarding Job
-    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/#onboardjob)
-    - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#onboardjob)
+    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/#onboardjob)
+    - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#onboardjob)
     Use below parameters
     ```
     {                   
@@ -46,7 +46,7 @@ Yes! Please follow below steps:
             "env": "dev"
     } 
     ```
-    - option#3: [Databircks Notebook](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#option2-databricks-notebook)
+    - option#3: [Databircks Notebook](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#option2-databricks-notebook)
 ```
         onboarding_params_map = {
                 "database": "uc_name.dlt_demo",
@@ -58,15 +58,15 @@ Yes! Please follow below steps:
                 "import_author": "Ravi"
                 }
 
-        from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
+        from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
         OnboardDataflowspec(spark, onboarding_params_map, uc_enabled=True).onboard_bronze_dataflow_spec()
 ```
 **Q. Can we run onboarding for silver layer only?**
 Yes! Please follow below steps:
 1. Bronze Metadata preparation ([example](https://github.com/databrickslabs/sdp-meta/blob/main/examples/onboarding_silverfanout.template))
 2. Onboarding Job
-    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/#onboardjob)
-    - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#onboardjob)
+    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/#onboardjob)
+    - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#onboardjob)
     Use below parameters
     ```
     {                   
@@ -81,7 +81,7 @@ Yes! Please follow below steps:
             "env": "dev"
     } 
     ```
-    - option#3: [Databircks Notebook](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#option2-databricks-notebook)
+    - option#3: [Databircks Notebook](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#option2-databricks-notebook)
 ```
         onboarding_params_map = {
                 "database": "uc_name.dlt_demo",
@@ -93,7 +93,7 @@ Yes! Please follow below steps:
                 "import_author": "Ravi"
                 }
 
-        from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
+        from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
         OnboardDataflowspec(spark, onboarding_params_map, uc_enabled=True).onboard_silver_dataflow_spec()
 ```
 

@@ -15,11 +15,11 @@ draft: false
 
 4. In the task dialog box that appears on the Tasks tab, replace Add a name for your job… with your job name, for example, Python wheel example.
 
-5. In Task name, enter a name for the task, for example, ```sdpmeta_onboarding_pythonwheel_task```.
+5. In Task name, enter a name for the task, for example, ```sdp_meta_onboarding_pythonwheel_task```.
 
 6. In Type, select Python wheel.
 
-7. In Package name, enter ```databricks_labs_sdpmeta```.
+7. In Package name, enter ```databricks_labs_sdp_meta```.
 
 8. In Entry point, enter ``run``. 
 
@@ -73,7 +73,7 @@ Alternatly you can enter keyword arguments, click + Add and enter a key and valu
 
 ### Option#2: Databricks Notebook 
 1. Copy below code to databricks notebook cells
-```%pip install databricks-labs-sdpmeta```
+```%pip install databricks-labs-sdp-meta```
 - without unity catalog
 ```python 
 onboarding_params_map = {
@@ -89,7 +89,7 @@ onboarding_params_map = {
 		"import_author": "Ravi"
 		}
 
-from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
+from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
 OnboardDataflowspec(spark, onboarding_params_map).onboard_dataflow_specs()
 ```
 - with unity catalog
@@ -105,7 +105,7 @@ onboarding_params_map = {
 		"import_author": "Ravi"
 		}
 
-from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
+from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
 OnboardDataflowspec(spark, onboarding_params_map, uc_enabled=True).onboard_dataflow_specs()
 ```
 2. Specify your onboarding config params in above ```onboarding_params_map```
@@ -128,7 +128,7 @@ OnboardDataflowspec(spark, onboarding_params_map, uc_enabled=True).onboard_dataf
     ```
     ```
         layer = spark.conf.get("layer", None)
-        from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline
+        from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline
         DataflowPipeline.invoke_dlt_pipeline(spark, layer)
     ```
 ### Create Bronze Lakeflow Declarative Pipeline

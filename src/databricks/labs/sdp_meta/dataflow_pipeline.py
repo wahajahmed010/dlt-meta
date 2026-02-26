@@ -7,12 +7,12 @@ import dlt
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import expr, struct
 from pyspark.sql.types import StructType, StructField
-from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec, DataflowSpecUtils
-from databricks.labs.sdpmeta.pipeline_writers import AppendFlowWriter, DLTSinkWriter
-from databricks.labs.sdpmeta.__about__ import __version__
-from databricks.labs.sdpmeta.pipeline_readers import PipelineReaders
+from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec, DataflowSpecUtils
+from databricks.labs.sdp_meta.pipeline_writers import AppendFlowWriter, DLTSinkWriter
+from databricks.labs.sdp_meta.__about__ import __version__
+from databricks.labs.sdp_meta.pipeline_readers import PipelineReaders
 
-logger = logging.getLogger('databricks.labs.sdpmeta')
+logger = logging.getLogger('databricks.labs.sdp_meta')
 logger.setLevel(logging.INFO)
 
 

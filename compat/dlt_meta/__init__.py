@@ -1,26 +1,26 @@
 """DLT-META Compatibility Package.
 
-DEPRECATED: This package is a compatibility wrapper for databricks-labs-sdpmeta.
-Please migrate to using databricks.labs.sdpmeta directly.
+DEPRECATED: This package is a compatibility wrapper for databricks-labs-sdp-meta.
+Please migrate to using databricks.labs.sdp_meta directly.
 
-All imports from this package are re-exported from databricks.labs.sdpmeta with deprecation warnings.
+All imports from this package are re-exported from databricks.labs.sdp_meta with deprecation warnings.
 """
 import warnings
 
 # Issue deprecation warning on import
 warnings.warn(
     "The 'dlt_meta' package is deprecated and will be removed in a future version. "
-    "Please migrate to 'databricks.labs.sdpmeta' (pip install databricks-labs-sdpmeta). "
+    "Please migrate to 'databricks.labs.sdp_meta' (pip install databricks-labs-sdp-meta). "
     "See https://databrickslabs.github.io/sdp-meta/ for migration guide.",
     DeprecationWarning,
     stacklevel=2
 )
 
-# Re-export everything from databricks.labs.sdpmeta
+# Re-export everything from databricks.labs.sdp_meta
 # This maintains full backwards compatibility
 try:
-    from databricks.labs.sdpmeta import *  # noqa: F401, F403
-    from databricks.labs.sdpmeta.cli import (  # noqa: F401
+    from databricks.labs.sdp_meta import *  # noqa: F401, F403
+    from databricks.labs.sdp_meta.cli import (  # noqa: F401
         SDPMeta as DLTMeta,  # Alias for backwards compatibility
         OnboardCommand,
         DeployCommand,
@@ -29,15 +29,15 @@ try:
         deploy,
         main,
     )
-    from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline  # noqa: F401
-    from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec  # noqa: F401
-    from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec  # noqa: F401
-    from databricks.labs.sdpmeta.pipeline_readers import PipelineReaders  # noqa: F401
-    from databricks.labs.sdpmeta.pipeline_writers import AppendFlowWriter, DLTSinkWriter  # noqa: F401
-    from databricks.labs.sdpmeta.install import WorkspaceInstaller  # noqa: F401
-    from databricks.labs.sdpmeta.config import WorkspaceConfig  # noqa: F401
+    from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline  # noqa: F401
+    from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec  # noqa: F401
+    from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec  # noqa: F401
+    from databricks.labs.sdp_meta.pipeline_readers import PipelineReaders  # noqa: F401
+    from databricks.labs.sdp_meta.pipeline_writers import AppendFlowWriter, DLTSinkWriter  # noqa: F401
+    from databricks.labs.sdp_meta.install import WorkspaceInstaller  # noqa: F401
+    from databricks.labs.sdp_meta.config import WorkspaceConfig  # noqa: F401
 except ImportError:
-    # If databricks.labs.sdpmeta module not available, this is being run standalone
+    # If databricks.labs.sdp_meta module not available, this is being run standalone
     pass
 
 

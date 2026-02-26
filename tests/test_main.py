@@ -2,7 +2,7 @@
 from tests.utils import SDPFrameworkTestCase
 import sys
 import copy
-from databricks.labs.sdpmeta import __main__
+from databricks.labs.sdp_meta import __main__
 from unittest.mock import MagicMock
 
 spark = MagicMock()

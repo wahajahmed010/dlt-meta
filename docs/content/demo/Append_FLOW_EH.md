@@ -38,21 +38,21 @@ draft: false
     ```
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 7. Configure Eventhub
 - Needs eventhub instance running
 - Need two eventhub topics first for main feed (eventhub_name) and second for append flow feed (eventhub_name_append_flow)
 - Create databricks secrets scope for eventhub keys
     - ```
-            commandline databricks secrets create-scope eventhubs_sdpmeta_creds
+            commandline databricks secrets create-scope eventhubs_sdp_meta_creds
         ```
     - ```commandline 
             databricks secrets put-secret --json '{
-                "scope": "eventhubs_sdpmeta_creds",
+                "scope": "eventhubs_sdp_meta_creds",
                 "key": "RootManageSharedAccessKey",
                 "string_value": "<<value>>"
                 }' 
@@ -62,19 +62,19 @@ draft: false
 - Following are the mandatory arguments for running EventHubs demo
     - cloud_provider_name: Cloud provider name e.g. aws or azure 
     - dbr_version:  Databricks Runtime Version e.g. 15.3.x-scala2.12
-    - uc_catalog_name : unity catalog name e.g. sdpmeta_uc
+    - uc_catalog_name : unity catalog name e.g. sdp_meta_uc
     - dbfs_path: Path on your Databricks workspace where demo will be copied for launching SDP-META Pipelines e.g. dbfs:/tmp/SDP-META/demo/ 
-    - eventhub_namespace: Eventhub namespace e.g. sdpmeta
-    - eventhub_name : Primary Eventhubname e.g. sdpmeta_demo
-    - eventhub_name_append_flow: Secondary eventhub name for appendflow feed e.g. sdpmeta_demo_af
+    - eventhub_namespace: Eventhub namespace e.g. sdp_meta
+    - eventhub_name : Primary Eventhubname e.g. sdp_meta_demo
+    - eventhub_name_append_flow: Secondary eventhub name for appendflow feed e.g. sdp_meta_demo_af
     - eventhub_producer_accesskey_name: Producer databricks access keyname e.g. RootManageSharedAccessKey
     - eventhub_consumer_accesskey_name: Consumer databricks access keyname e.g. RootManageSharedAccessKey
-    - eventhub_secrets_scope_name: Databricks secret scope name e.g. eventhubs_sdpmeta_creds
+    - eventhub_secrets_scope_name: Databricks secret scope name e.g. eventhubs_sdp_meta_creds
     - eventhub_port: Eventhub port
 
 8. Run the command:
     ```commandline 
-    python demo/launch_af_eventhub_demo.py --cloud_provider_name=aws --uc_catalog_name=sdpmeta_uc --eventhub_name=sdpmeta_demo --eventhub_name_append_flow=sdpmeta_demo_af --eventhub_secrets_scope_name=sdpmeta_eventhub_creds --eventhub_namespace=sdpmeta --eventhub_port=9093 --eventhub_producer_accesskey_name=RootManageSharedAccessKey --eventhub_consumer_accesskey_name=RootManageSharedAccessKey --eventhub_accesskey_secret_name=RootManageSharedAccessKey
+    python demo/launch_af_eventhub_demo.py --cloud_provider_name=aws --uc_catalog_name=sdp_meta_uc --eventhub_name=sdp_meta_demo --eventhub_name_append_flow=sdp_meta_demo_af --eventhub_secrets_scope_name=sdp_meta_eventhub_creds --eventhub_namespace=sdp_meta --eventhub_port=9093 --eventhub_producer_accesskey_name=RootManageSharedAccessKey --eventhub_consumer_accesskey_name=RootManageSharedAccessKey --eventhub_accesskey_secret_name=RootManageSharedAccessKey
     ```
 
 ![af_eh_demo.png](/images/af_eh_demo.png)

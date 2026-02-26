@@ -7,7 +7,7 @@ sdp_meta_whl = spark.conf.get("sdp_meta_whl")
 # Databricks notebook source
 # DBTITLE 1,DLT Snapshot Processing Logic
 import dlt
-from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec
+from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec
 
 def exist(path):
     try:
@@ -38,6 +38,6 @@ def next_snapshot_and_version(latest_snapshot_version, dataflow_spec):
 # COMMAND ----------
 
 layer = spark.conf.get("layer", None)
-from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline
+from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline
 DataflowPipeline.invoke_dlt_pipeline(spark, layer, bronze_next_snapshot_and_version=next_snapshot_and_version, silver_next_snapshot_and_version=None)
 # DataflowPipeline.invoke_dlt_pipeline(spark, layer)

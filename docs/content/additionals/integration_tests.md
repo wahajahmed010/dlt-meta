@@ -29,10 +29,10 @@ draft: false
     pip install databricks-sdk
 ```
 ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
 ```
  ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
 ```
 
 2. Run integration test against cloudfile or eventhub or kafka using below options: If databricks profile configured using CLI then pass ```--profile <profile-name>``` to below command otherwise provide workspace url and token in command line

@@ -2,8 +2,8 @@ import logging
 
 from databricks.sdk import WorkspaceClient
 
-from databricks.labs.sdpmeta.__about__ import __version__
-from databricks.labs.sdpmeta.install import WorkspaceInstaller
+from databricks.labs.sdp_meta.__about__ import __version__
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 
 logger = logging.getLogger("databricks.labs.sdp-meta.install")
 

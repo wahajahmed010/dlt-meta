@@ -5,7 +5,7 @@ from pyspark.sql import DataFrame
 from pyspark.sql.types import StructType
 from pyspark.sql.functions import from_json, col
 
-logger = logging.getLogger('databricks.labs.sdpmeta')
+logger = logging.getLogger('databricks.labs.sdp_meta')
 logger.setLevel(logging.INFO)
 
 

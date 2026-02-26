@@ -19,9 +19,9 @@ The rename aligns with the current Databricks product terminology for Lakeflow D
 
 | Component | Old (DLT-META) | New (SDP-META) |
 |-----------|----------------|----------------|
-| PyPI package | `dlt-meta` | `databricks-labs-sdpmeta` |
+| PyPI package | `dlt-meta` | `databricks-labs-sdp-meta` |
 | CLI commands | `databricks labs dlt-meta` | `databricks labs sdp-meta` |
-| Python imports | `from dlt_meta import ...` | `from databricks.labs.sdpmeta import ...` |
+| Python imports | `from dlt_meta import ...` | `from databricks.labs.sdp_meta import ...` |
 | Main class | `DLTMeta` | `SDPMeta` |
 | Labs install | `databricks labs install dlt-meta` | `databricks labs install sdp-meta` |
 
@@ -52,7 +52,7 @@ Or via pip:
 pip install dlt-meta
 
 # New
-pip install databricks-labs-sdpmeta
+pip install databricks-labs-sdp-meta
 ```
 
 ### 2. Update CLI Commands
@@ -77,9 +77,9 @@ from dlt_meta.cli import DLTMeta
 from dlt_meta import DataflowPipeline
 
 # New imports (recommended)
-from databricks.labs.sdpmeta.cli import SDPMeta
-from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline
-from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
+from databricks.labs.sdp_meta.cli import SDPMeta
+from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline
+from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
 ```
 
 ### 4. Update Runner Notebooks
@@ -91,12 +91,12 @@ If you have custom runner notebooks, update the pip install line:
 %pip install dlt-meta==0.0.10
 
 # New
-%pip install databricks-labs-sdpmeta==0.0.11
+%pip install databricks-labs-sdp-meta==0.0.11
 ```
 
 The import in the notebook remains the same:
 ```python
-from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline
+from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline
 DataflowPipeline.invoke_dlt_pipeline(spark, layer)
 ```
 
@@ -104,7 +104,7 @@ DataflowPipeline.invoke_dlt_pipeline(spark, layer)
 
 The old `dlt-meta` package is maintained as a **compatibility wrapper** that:
 
-- Re-exports all symbols from `databricks.labs.sdpmeta`
+- Re-exports all symbols from `databricks.labs.sdp_meta`
 - Emits `DeprecationWarning` on import
 - Forwards all CLI commands to `sdp-meta`
 
@@ -116,8 +116,8 @@ The following aliases are maintained for backward compatibility:
 
 | Old Name | New Name | Location |
 |----------|----------|----------|
-| `DLTMeta` | `SDPMeta` | `databricks.labs.sdpmeta.cli` |
-| `DLT_META_RUNNER_NOTEBOOK` | `SDP_META_RUNNER_NOTEBOOK` | `databricks.labs.sdpmeta.cli` |
+| `DLTMeta` | `SDPMeta` | `databricks.labs.sdp_meta.cli` |
+| `DLT_META_RUNNER_NOTEBOOK` | `SDP_META_RUNNER_NOTEBOOK` | `databricks.labs.sdp_meta.cli` |
 
 ## Deprecation Timeline
 

@@ -1,7 +1,7 @@
 """Main entry point of the Python Wheel."""
 import logging
 import argparse
-from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
+from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
 from pyspark.sql import SparkSession
 
 logger = logging.getLogger("sdp-meta")

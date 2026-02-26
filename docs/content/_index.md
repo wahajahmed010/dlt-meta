@@ -32,13 +32,13 @@ The framework leverages metadata recorded in an onboarding JSON file (the Datafl
 ![SDP-META Stages](/images/sdp-meta_stages.png)
 - [Metadata Preparation](https://databrickslabs.github.io/sdp-meta/getting_started/metadatapreperation/)
 - Onboarding Job
-    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/#onboardjob)
-    - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#onboardjob)
-    - option#3: [Databricks Notebook](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#option2-databricks-notebook)
+    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/#onboardjob)
+    - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#onboardjob)
+    - option#3: [Databricks Notebook](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#option2-databricks-notebook)
 
 - Dataflow Lakeflow Declarative Pipeline
-    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/#dataflow-dlt-pipeline)
-    - Option#2: [SDP-META MANUAL](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_manual/#dataflow-dlt-pipeline)
+    - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/#dataflow-dlt-pipeline)
+    - Option#2: [SDP-META MANUAL](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#dataflow-dlt-pipeline)
 
 ## SDP-META Feature Support
 | Features  | SDP-META Support |
@@ -53,7 +53,7 @@ The framework leverages metadata recorded in an onboarding JSON file (the Datafl
 | [create_auto_cdc_from_snapshot_flow](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-apply-changes-from-snapshot) API support | Yes |
 | Liquid cluster support | Yes |
 | [create_sink](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-sink) API support | Yes |
-| [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdpmeta_cli/) | Yes |
+| [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/) | Yes |
 | Bronze and Silver pipeline chaining | Yes |
 | [Databricks Asset Bundles](https://docs.databricks.com/aws/en/dev-tools/bundles/) | Yes |
 | [SDP-META UI](https://github.com/databrickslabs/sdp-meta/tree/main/lakehouse_app#sdp-meta-lakehouse-app-setup) | Yes |

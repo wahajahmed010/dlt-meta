@@ -11,10 +11,10 @@ import pyspark.sql.types as T
 from pyspark.sql import functions as f
 from pyspark.sql.types import ArrayType, MapType, StringType, StructField, StructType
 
-from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, DataflowSpecUtils, SilverDataflowSpec
-from databricks.labs.sdpmeta.metastore_ops import DeltaPipelinesInternalTableOps, DeltaPipelinesMetaStoreOps
+from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, DataflowSpecUtils, SilverDataflowSpec
+from databricks.labs.sdp_meta.metastore_ops import DeltaPipelinesInternalTableOps, DeltaPipelinesMetaStoreOps
 
-logger = logging.getLogger("databricks.labs.sdpmeta")
+logger = logging.getLogger("databricks.labs.sdp_meta")
 logger.setLevel(logging.INFO)
 
 

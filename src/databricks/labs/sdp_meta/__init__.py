@@ -6,11 +6,11 @@ The framework uses the Lakeflow Declarative Pipelines runtime for building
 automated bronze and silver data pipelines.
 
 Example usage:
-    from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline
-    from databricks.labs.sdpmeta.cli import SDPMeta
-    from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
+    from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline
+    from databricks.labs.sdp_meta.cli import SDPMeta
+    from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
 """
-from databricks.labs.sdpmeta.__about__ import __version__, __package_name__
+from databricks.labs.sdp_meta.__about__ import __version__, __package_name__
 
 __all__ = [
     "__version__",

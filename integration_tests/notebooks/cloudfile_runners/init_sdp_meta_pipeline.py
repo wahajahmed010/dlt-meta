@@ -6,5 +6,5 @@ sdp_meta_whl = spark.conf.get("sdp_meta_whl")
 
 layer = spark.conf.get("layer", None)
 
-from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline
+from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline
 DataflowPipeline.invoke_dlt_pipeline(spark, layer)

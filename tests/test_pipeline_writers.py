@@ -5,17 +5,17 @@ from unittest.mock import MagicMock, patch
 # Mock the dlt module before importing modules that depend on it
 sys.modules["dlt"] = MagicMock()
 
-from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline  # noqa: E402
-from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, DataflowSpecUtils  # noqa: E402
-from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec  # noqa: E402
-from databricks.labs.sdpmeta.pipeline_writers import AppendFlowWriter, DLTSinkWriter  # noqa: E402
-from databricks.labs.sdpmeta.dataflow_spec import DLTSink  # noqa: E402
+from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline  # noqa: E402
+from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, DataflowSpecUtils  # noqa: E402
+from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec  # noqa: E402
+from databricks.labs.sdp_meta.pipeline_writers import AppendFlowWriter, DLTSinkWriter  # noqa: E402
+from databricks.labs.sdp_meta.dataflow_spec import DLTSink  # noqa: E402
 from tests.utils import SDPFrameworkTestCase  # noqa: E402
 
 
 class TestAppendFlowWriter(SDPFrameworkTestCase):
 
-    @patch('databricks.labs.sdpmeta.pipeline_writers.dlt')
+    @patch('databricks.labs.sdp_meta.pipeline_writers.dlt')
     def test_read_af_view(self, mock_dlt):
         appendflow_writer = AppendFlowWriter(
             self.spark, MagicMock(), "test_target", "test_schema",
@@ -24,7 +24,7 @@ class TestAppendFlowWriter(SDPFrameworkTestCase):
         appendflow_writer.read_af_view()
         mock_dlt.read_stream.assert_called_once()
 
-    @patch('databricks.labs.sdpmeta.pipeline_writers.dlt')
+    @patch('databricks.labs.sdp_meta.pipeline_writers.dlt')
     def test_write_flow(self, mock_dlt):
         appendflow_writer = AppendFlowWriter(
             self.spark, MagicMock(), "test_target", "test_schema",
@@ -37,7 +37,7 @@ class TestAppendFlowWriter(SDPFrameworkTestCase):
 
 class TestSDPSinkWriter(SDPFrameworkTestCase):
 
-    @patch('databricks.labs.sdpmeta.pipeline_writers.dlt')
+    @patch('databricks.labs.sdp_meta.pipeline_writers.dlt')
     def test_read_input_view(self, mock_dlt):
         dlt_sink = DLTSink(
             name="test_sink",
@@ -50,7 +50,7 @@ class TestSDPSinkWriter(SDPFrameworkTestCase):
         sink_writer.read_input_view()
         mock_dlt.read_stream.assert_called_once_with("test_view")
 
-    @patch('databricks.labs.sdpmeta.pipeline_writers.dlt')
+    @patch('databricks.labs.sdp_meta.pipeline_writers.dlt')
     def test_write_to_sink(self, mock_dlt):
         dlt_sink = DLTSink(
             name="test_sink",
@@ -64,8 +64,8 @@ class TestSDPSinkWriter(SDPFrameworkTestCase):
         mock_dlt.create_sink.assert_called_once_with(name='test_sink', format='kafka', options={})
         mock_dlt.append_flow.assert_called_once()
 
-    @patch('databricks.labs.sdpmeta.pipeline_writers.dlt')
-    @patch('databricks.labs.sdpmeta.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.pipeline_writers.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_dataflowpipeline_bronze_sink_write(self, mock_dlt_dp, mock_dlt_pw):
         mock_dlt_dp.table = MagicMock(return_value=lambda func: func)
         mock_dlt_pw.append_flow = MagicMock(return_value=lambda func: func)

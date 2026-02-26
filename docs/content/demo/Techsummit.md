@@ -38,10 +38,10 @@ This demo will launch auto generated tables(100s) inside single bronze and silve
 
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. Run the command:

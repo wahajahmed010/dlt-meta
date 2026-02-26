@@ -1,7 +1,7 @@
 """Setup file for SDP-META (primary package).
 
 This is the primary package following Databricks Labs namespace conventions.
-Package structure: databricks.labs.sdpmeta
+Package structure: databricks.labs.sdp_meta
 
 For backwards compatibility wrapper (dlt-meta package), see the compat/ directory.
 """
@@ -23,7 +23,7 @@ DEV_REQUIREMENTS = [
 IT_REQUIREMENTS = ["typer[all]==0.6.1"]
 
 setup(
-    name="databricks-labs-sdpmeta",
+    name="databricks-labs-sdp-meta",
     version="0.0.11",
     python_requires=">=3.8",
     setup_requires=["wheel>=0.37.1,<=0.42.0"],
@@ -39,9 +39,9 @@ setup(
     packages=find_namespace_packages(where="src", include=["databricks.*"]),
     entry_points={
         "console_scripts": [
-            "sdpmeta=databricks.labs.sdpmeta.__main__:main",
+            "sdp-meta=databricks.labs.sdp_meta.__main__:main",
         ],
-        "group_1": "run=databricks.labs.sdpmeta.__main__:main",
+        "group_1": "run=databricks.labs.sdp_meta.__main__:main",
     },
     classifiers=[
         "Programming Language :: Python :: 3",

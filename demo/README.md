@@ -38,11 +38,11 @@ This Demo launches Bronze and Silver pipelines with following activities:
 
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
 
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. ```commandline
@@ -76,11 +76,11 @@ This demo will launch auto generated tables(100s) inside single bronze and silve
 
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
 
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. ```commandline
@@ -118,11 +118,11 @@ This demo will perform following tasks:
 
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
 
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. ```commandline
@@ -156,21 +156,21 @@ This demo will perform following tasks:
     ```
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 6. Eventhub
 - Needs eventhub instance running
 - Need two eventhub topics first for main feed (eventhub_name) and second for append flow feed (eventhub_name_append_flow)
 - Create databricks secrets scope for eventhub keys
     - ```
-            commandline databricks secrets create-scope eventhubs_sdpmeta_creds
+            commandline databricks secrets create-scope eventhubs_sdp_meta_creds
         ```
     - ```commandline
             databricks secrets put-secret --json '{
-                "scope": "eventhubs_sdpmeta_creds",
+                "scope": "eventhubs_sdp_meta_creds",
                 "key": "RootManageSharedAccessKey",
                 "string_value": "<<value>>"
                 }'
@@ -178,17 +178,17 @@ This demo will perform following tasks:
 - Create databricks secrets to store producer and consumer keys using the scope created in step 2
 
 - Following are the mandatory arguments for running EventHubs demo
-    - uc_catalog_name : unity catalog name e.g. ravi_sdpmeta_uc
-    - eventhub_namespace: Eventhub namespace e.g. sdpmeta
-    - eventhub_name : Primary Eventhubname e.g. sdpmeta_demo
-    - eventhub_name_append_flow: Secondary eventhub name for appendflow feed e.g. sdpmeta_demo_af
+    - uc_catalog_name : unity catalog name e.g. ravi_sdp_meta_uc
+    - eventhub_namespace: Eventhub namespace e.g. sdp_meta
+    - eventhub_name : Primary Eventhubname e.g. sdp_meta_demo
+    - eventhub_name_append_flow: Secondary eventhub name for appendflow feed e.g. sdp_meta_demo_af
     - eventhub_producer_accesskey_name: Producer databricks access keyname e.g. RootManageSharedAccessKey
     - eventhub_consumer_accesskey_name: Consumer databricks access keyname e.g. RootManageSharedAccessKey
-    - eventhub_secrets_scope_name: Databricks secret scope name e.g. eventhubs_sdpmeta_creds
+    - eventhub_secrets_scope_name: Databricks secret scope name e.g. eventhubs_sdp_meta_creds
     - eventhub_port: Eventhub port
 
 7. ```commandline
-    python3 demo/launch_af_eventhub_demo.py --uc_catalog_name=<<uc catalog name>> --eventhub_name=sdpmeta_demo --eventhub_name_append_flow=sdpmeta_demo_af --eventhub_secrets_scope_name=sdpmeta_eventhub_creds --eventhub_namespace=sdpmeta --eventhub_port=9093 --eventhub_producer_accesskey_name=RootManageSharedAccessKey --eventhub_consumer_accesskey_name=RootManageSharedAccessKey --eventhub_accesskey_secret_name=RootManageSharedAccessKey --profile=<<DEFAULT>>
+    python3 demo/launch_af_eventhub_demo.py --uc_catalog_name=<<uc catalog name>> --eventhub_name=sdp_meta_demo --eventhub_name_append_flow=sdp_meta_demo_af --eventhub_secrets_scope_name=sdp_meta_eventhub_creds --eventhub_namespace=sdp_meta --eventhub_port=9093 --eventhub_producer_accesskey_name=RootManageSharedAccessKey --eventhub_consumer_accesskey_name=RootManageSharedAccessKey --eventhub_accesskey_secret_name=RootManageSharedAccessKey --profile=<<DEFAULT>>
     ```
 
   ![af_eh_demo.png](../docs/static/images/af_eh_demo.png)
@@ -221,10 +221,10 @@ This demo will perform following tasks:
     ```
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 6. Run the command 
@@ -287,10 +287,10 @@ This demo will perform following tasks:
     ```
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
 
 6. Run the command 
     ```commandline
@@ -328,10 +328,10 @@ This demo will perform following tasks:
     ```
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 6. Optional: if you are using secrets for kafka. Create databricks secrets scope for source and sink kafka using below command
@@ -392,10 +392,10 @@ This demo will perform following steps:
     ```
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 6. Generate DAB resources and set up schemas:

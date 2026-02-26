@@ -21,7 +21,7 @@ from databricks.sdk.service.catalog import SchemasAPI, VolumeInfo, VolumeType
 from databricks.sdk.service.pipelines import NotebookLibrary, PipelineLibrary
 from databricks.sdk.service.workspace import ImportFormat, Language
 
-from databricks.labs.sdpmeta.install import WorkspaceInstaller
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 
 # Dictionary mapping cloud providers to node types
 cloud_node_type_id_dict = {
@@ -309,7 +309,7 @@ class SDPMETARunner:
 
     def create_workflow_spec(self, runner_conf: SDPMetaRunnerConf):
         """Create the Databricks Workflow Job given the DLT Meta configuration specs"""
-        sdpmeta_environments = [
+        sdp_meta_environments = [
             jobs.JobEnvironment(
                 environment_key="dl_meta_int_env",
                 spec=compute.Environment(
@@ -325,7 +325,7 @@ class SDPMETARunner:
                 description="test",
                 timeout_seconds=0,
                 python_wheel_task=jobs.PythonWheelTask(
-                    package_name="databricks_labs_sdpmeta",
+                    package_name="databricks_labs_sdp_meta",
                     entry_point="run",
                     named_parameters={
                         "onboard_layer": (
@@ -402,7 +402,7 @@ class SDPMETARunner:
                         environment_key="dl_meta_int_env",
                         timeout_seconds=0,
                         python_wheel_task=jobs.PythonWheelTask(
-                            package_name="databricks_labs_sdpmeta",
+                            package_name="databricks_labs_sdp_meta",
                             entry_point="run",
                             named_parameters={
                                 "onboard_layer": "bronze",
@@ -575,7 +575,7 @@ class SDPMETARunner:
 
         return self.ws.jobs.create(
             name=f"sdp-meta-{runner_conf.run_id}",
-            environments=sdpmeta_environments,
+            environments=sdp_meta_environments,
             tasks=tasks,
         )
 
@@ -755,7 +755,7 @@ class SDPMETARunner:
         )
         print(f"Python wheel upload to {runner_conf.remote_whl_path} completed!!!")
 
-    def init_sdpmeta_runner_conf(self, runner_conf: SDPMetaRunnerConf):
+    def init_sdp_meta_runner_conf(self, runner_conf: SDPMetaRunnerConf):
         """Create testing metadata including schemas, volumes, and uploading necessary notebooks"""
 
         # Generate uc schemas, volumes and upload onboarding files
@@ -857,7 +857,7 @@ class SDPMETARunner:
 
     def run(self, runner_conf: SDPMetaRunnerConf):
         try:
-            self.init_sdpmeta_runner_conf(runner_conf)
+            self.init_sdp_meta_runner_conf(runner_conf)
             self.create_bronze_silver_dlt(runner_conf)
             self.launch_workflow(runner_conf)
             self.download_test_results(runner_conf)

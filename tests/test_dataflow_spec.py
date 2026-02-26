@@ -4,14 +4,14 @@ import sys
 from unittest.mock import MagicMock, patch
 import json
 from tests.utils import SDPFrameworkTestCase
-from databricks.labs.sdpmeta.dataflow_spec import (
+from databricks.labs.sdp_meta.dataflow_spec import (
     DataflowSpecUtils,
     CDCApplyChanges,
     ApplyChangesFromSnapshot,
     BronzeDataflowSpec,
     SilverDataflowSpec,
 )
-from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
+from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
 
 sys.modules["pyspark.dbutils"] = MagicMock()
 dbutils = MagicMock()
@@ -587,7 +587,7 @@ class DataFlowSpecTests(SDPFrameworkTestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].options, {"path": "/test/path"})
 
-    @patch('databricks.labs.sdpmeta.dataflow_spec.DataflowSpecUtils.get_db_utils')
+    @patch('databricks.labs.sdp_meta.dataflow_spec.DataflowSpecUtils.get_db_utils')
     def test_get_sinks_kafka_with_ssl_missing_params(self, mock_get_db_utils):
         """Test Kafka sink with SSL but missing required parameters to cover lines 503-511."""
         mock_dbutils = MagicMock()
@@ -610,7 +610,7 @@ class DataFlowSpecTests(SDPFrameworkTestCase):
             DataflowSpecUtils.get_sinks(sink_spec, self.spark)
         self.assertIn("Kafka ssl required params are", str(context.exception))
 
-    @patch('databricks.labs.sdpmeta.dataflow_spec.DataflowSpecUtils.get_db_utils')
+    @patch('databricks.labs.sdp_meta.dataflow_spec.DataflowSpecUtils.get_db_utils')
     def test_get_sinks_kafka_with_complete_ssl_config(self, mock_get_db_utils):
         """Test Kafka sink with complete SSL configuration to cover lines 486-502."""
         mock_dbutils = MagicMock()
@@ -639,7 +639,7 @@ class DataFlowSpecTests(SDPFrameworkTestCase):
         self.assertEqual(result[0].options["kafka.ssl.keystore.password"], "secret_keystore_scope_keystore_key")
         self.assertEqual(result[0].options["kafka.ssl.truststore.password"], "secret_truststore_scope_truststore_key")
 
-    @patch('databricks.labs.sdpmeta.dataflow_spec.DataflowSpecUtils.get_db_utils')
+    @patch('databricks.labs.sdp_meta.dataflow_spec.DataflowSpecUtils.get_db_utils')
     def test_get_sinks_kafka_basic_config(self, mock_get_db_utils):
         """Test Kafka sink with basic configuration to cover lines 475-482."""
         mock_dbutils = MagicMock()
@@ -661,7 +661,7 @@ class DataFlowSpecTests(SDPFrameworkTestCase):
         self.assertNotIn("kafka_sink_servers_secret_scope_name", result[0].options)
         self.assertNotIn("kafka_sink_servers_secret_scope_key", result[0].options)
 
-    @patch('databricks.labs.sdpmeta.dataflow_spec.DataflowSpecUtils.get_db_utils')
+    @patch('databricks.labs.sdp_meta.dataflow_spec.DataflowSpecUtils.get_db_utils')
     def test_get_sinks_eventhub_config(self, mock_get_db_utils):
         """Test EventHub sink configuration to cover lines 513-549."""
         mock_dbutils = MagicMock()
@@ -694,7 +694,7 @@ class DataFlowSpecTests(SDPFrameworkTestCase):
         self.assertNotIn("eventhub.port", result[0].options)
         self.assertNotIn("eventhub.name", result[0].options)
 
-    @patch('databricks.labs.sdpmeta.dataflow_spec.DataflowSpecUtils.get_db_utils')
+    @patch('databricks.labs.sdp_meta.dataflow_spec.DataflowSpecUtils.get_db_utils')
     def test_get_sinks_eventhub_with_default_secret_name(self, mock_get_db_utils):
         """Test EventHub sink with default secret name to cover line 522."""
         mock_dbutils = MagicMock()

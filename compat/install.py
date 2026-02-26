@@ -1,6 +1,6 @@
 """Installation script for dlt-meta compatibility wrapper.
 
-This redirects to the databricks-labs-sdpmeta installation with a deprecation notice.
+This redirects to the databricks-labs-sdp-meta installation with a deprecation notice.
 """
 import logging
 import warnings
@@ -32,9 +32,9 @@ def main():
     print("Your existing configurations will continue to work.")
     print("=" * 60 + "\n")
 
-    # Proceed with installation by calling sdpmeta install
+    # Proceed with installation by calling sdp_meta install
     try:
-        from databricks.labs.sdpmeta.install import WorkspaceInstaller
+        from databricks.labs.sdp_meta.install import WorkspaceInstaller
         from databricks.sdk import WorkspaceClient
 
         ws = WorkspaceClient(product="dlt-meta")  # Keep old product name for backwards compat

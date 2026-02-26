@@ -1,8 +1,8 @@
 """Test OnboardDataflowSpec class."""
 import copy
 from tests.utils import SDPFrameworkTestCase
-from databricks.labs.sdpmeta.onboard_dataflowspec import OnboardDataflowspec
-from databricks.labs.sdpmeta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
+from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
+from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
 from unittest.mock import MagicMock, patch
 from pyspark.sql import DataFrame
 

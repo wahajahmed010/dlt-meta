@@ -140,11 +140,11 @@ class WorkspaceConfig(_Config["WorkspaceConfig"]):
     dbr_version: str
     cloud_provider_name: str
     dbfs_path: str
-    sdpmeta_operation: str
+    sdp_meta_operation: str
     onboarding_file_path: str
     uc_enabled: bool
     uc_catalog_name: str
-    sdpmeta_schema: str
+    sdp_meta_schema: str
     bronze_dataflow_spec_table: str
     bronze_dataflow_spec_path: str
     silver_dataflow_spec_table: str
@@ -153,8 +153,8 @@ class WorkspaceConfig(_Config["WorkspaceConfig"]):
     dataflow_spec_version: str
     bronze_schema: str
     silver_schema: str
-    sdpmeta_layer: str
-    sdpmeta_onboard_group: str
+    sdp_meta_layer: str
+    sdp_meta_onboard_group: str
     serverless: bool
     num_workers: int
 

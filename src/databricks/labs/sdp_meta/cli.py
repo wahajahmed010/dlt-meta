@@ -12,21 +12,21 @@ from databricks.sdk.service import jobs, pipelines, compute
 from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary
 from databricks.sdk.core import DatabricksError
 from databricks.sdk.service.catalog import SchemasAPI, VolumeType
-from databricks.labs.sdpmeta import __about__
-from databricks.labs.sdpmeta.install import WorkspaceInstaller
+from databricks.labs.sdp_meta import __about__
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 
-logger = logging.getLogger('databricks.labs.sdpmeta')
+logger = logging.getLogger('databricks.labs.sdp_meta')
 
 
 # Runner notebook template for DLT pipeline
 SDP_META_RUNNER_NOTEBOOK = """
 # Databricks notebook source
-# MAGIC %pip install databricks-labs-sdpmeta=={version}
+# MAGIC %pip install databricks-labs-sdp-meta=={version}
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 layer = spark.conf.get("layer", None)
-from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline
+from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline
 DataflowPipeline.invoke_dlt_pipeline(spark, layer)
 """
 
@@ -45,7 +45,7 @@ class OnboardCommand:
     env: str
     import_author: str
     version: str
-    sdpmeta_schema: str
+    sdp_meta_schema: str
     dbfs_path: str = None
     cloud: str = None
     dbr_version: str = None
@@ -96,8 +96,8 @@ class OnboardCommand:
             if not self.uc_enabled:
                 if not self.silver_dataflowspec_path:
                     raise ValueError("silver_dataflowspec_path is required")
-        if not self.sdpmeta_schema:
-            raise ValueError("sdpmeta_schema is required")
+        if not self.sdp_meta_schema:
+            raise ValueError("sdp_meta_schema is required")
         if not self.import_author:
             raise ValueError("import_author is required")
         if not self.version:
@@ -114,8 +114,8 @@ class DeployCommand:
     dlt_target_schema: str
     onboard_bronze_group: str = None
     onboard_silver_group: str = None
-    sdpmeta_bronze_schema: str = None
-    sdpmeta_silver_schema: str = None
+    sdp_meta_bronze_schema: str = None
+    sdp_meta_silver_schema: str = None
     dataflowspec_bronze_table: str = None
     dataflowspec_silver_table: str = None
     num_workers: int = None
@@ -165,7 +165,7 @@ class SDPMeta:
     def _get_schema_from_json(oc_json: dict) -> str:
         """Read the schema key from onboarding_job_details.json with backward compatibility.
 
-        Supports both the new key ``sdpmeta_schema`` and the legacy key
+        Supports both the new key ``sdp_meta_schema`` and the legacy key
         ``dlt_meta_schema`` so that JSON files produced by either version
         of the CLI are accepted.
 
@@ -178,8 +178,8 @@ class SDPMeta:
         Raises:
             KeyError: If neither key is found in the JSON.
         """
-        if "sdpmeta_schema" in oc_json:
-            return oc_json["sdpmeta_schema"]
+        if "sdp_meta_schema" in oc_json:
+            return oc_json["sdp_meta_schema"]
         if "dlt_meta_schema" in oc_json:
             logger.warning(
                 "Found legacy key 'dlt_meta_schema' in onboarding_job_details.json. "
@@ -187,7 +187,7 @@ class SDPMeta:
             )
             return oc_json["dlt_meta_schema"]
         raise KeyError(
-            "Neither 'sdpmeta_schema' nor 'dlt_meta_schema' found in "
+            "Neither 'sdp_meta_schema' nor 'dlt_meta_schema' found in "
             "onboarding_job_details.json. Please re-run the onboarding step."
         )
 
@@ -230,17 +230,17 @@ class SDPMeta:
                 )
                 self._ws.dbfs.upload(dbfs_path, contents, overwrite=True)
 
-    def create_uc_volume(self, uc_catalog_name, sdpmeta_schema):
+    def create_uc_volume(self, uc_catalog_name, sdp_meta_schema):
         try:
             self._ws.volumes.create(
                 catalog_name=uc_catalog_name,
-                schema_name=sdpmeta_schema,
-                name=sdpmeta_schema,
+                schema_name=sdp_meta_schema,
+                name=sdp_meta_schema,
                 volume_type=VolumeType.MANAGED,
             )
         except Exception:
-            logger.info(f"Volume {sdpmeta_schema} already exists")
-        return f"/Volumes/{uc_catalog_name}/{sdpmeta_schema}/{sdpmeta_schema}/"
+            logger.info(f"Volume {sdp_meta_schema} already exists")
+        return f"/Volumes/{uc_catalog_name}/{sdp_meta_schema}/{sdp_meta_schema}/"
 
     def onboard(self, cmd: OnboardCommand):
         """launch the onboarding job."""
@@ -248,18 +248,18 @@ class SDPMeta:
         ob_file = open(cmd.onboarding_file_path, "rb")
 
         if cmd.uc_enabled:
-            self.create_uc_schema(cmd.uc_catalog_name, cmd.sdpmeta_schema)
-            cmd.uc_volume_path = self.create_uc_volume(cmd.uc_catalog_name, cmd.sdpmeta_schema)
+            self.create_uc_schema(cmd.uc_catalog_name, cmd.sdp_meta_schema)
+            cmd.uc_volume_path = self.create_uc_volume(cmd.uc_catalog_name, cmd.sdp_meta_schema)
             self.update_ws_onboarding_paths(cmd)
-            self.copy_to_uc_volume(cmd.onboarding_files_dir_path, cmd.uc_volume_path + "/sdpmeta_conf/")
-            logger.info(f"uploading to  {cmd.uc_volume_path}/sdpmeta_conf complete!!!")
+            self.copy_to_uc_volume(cmd.onboarding_files_dir_path, cmd.uc_volume_path + "/sdp_meta_conf/")
+            logger.info(f"uploading to  {cmd.uc_volume_path}/sdp_meta_conf complete!!!")
         else:
-            self._ws.dbfs.mkdirs(f"{cmd.dbfs_path}/sdpmeta_conf/")
-            self._ws.dbfs.upload(f"{cmd.dbfs_path}/sdpmeta_conf/{onboarding_filename}", ob_file, overwrite=True)
+            self._ws.dbfs.mkdirs(f"{cmd.dbfs_path}/sdp_meta_conf/")
+            self._ws.dbfs.upload(f"{cmd.dbfs_path}/sdp_meta_conf/{onboarding_filename}", ob_file, overwrite=True)
             self.update_ws_onboarding_paths(cmd)
             onboarding_filename = os.path.basename(cmd.onboarding_file_path)
-            self.copy_to_dbfs(cmd.onboarding_files_dir_path, cmd.dbfs_path + "/sdpmeta_conf/")
-            logger.info(f"uploading to  {cmd.dbfs_path}/sdpmeta_conf complete!!!")
+            self.copy_to_dbfs(cmd.onboarding_files_dir_path, cmd.dbfs_path + "/sdp_meta_conf/")
+            logger.info(f"uploading to  {cmd.dbfs_path}/sdp_meta_conf complete!!!")
         created_job = self.create_onnboarding_job(cmd)
         logger.info(f"Waiting for job to complete. job_id={created_job.job_id}")
         run = self._ws.jobs.run_now(job_id=created_job.job_id)
@@ -274,18 +274,18 @@ class SDPMeta:
         )
         webbrowser.open(f"{self._ws.config.host}/jobs/{created_job.job_id}?o={self._ws.get_workspace_id()}")
 
-    def create_uc_schema(self, uc_catalog_name, sdpmeta_schema):
+    def create_uc_schema(self, uc_catalog_name, sdp_meta_schema):
         try:
-            SchemasAPI(self._ws.api_client).get(full_name=f"{uc_catalog_name}.{sdpmeta_schema}")
+            SchemasAPI(self._ws.api_client).get(full_name=f"{uc_catalog_name}.{sdp_meta_schema}")
         except Exception:
             msg = (
                 "Schema {catalog}.{schema} not found. "
                 "Creating schema={schema}"
-            ).format(catalog=uc_catalog_name, schema=sdpmeta_schema)
+            ).format(catalog=uc_catalog_name, schema=sdp_meta_schema)
             logger.info(msg)
             SchemasAPI(self._ws.api_client).create(
                 catalog_name=uc_catalog_name,
-                name=sdpmeta_schema,
+                name=sdp_meta_schema,
                 comment="sdp_meta framework schema"
             )
 
@@ -307,7 +307,7 @@ class SDPMeta:
                 }
             )
         named_parameters = self._get_onboarding_named_parameters(cmd)
-        sdpmeta_environments = [
+        sdp_meta_environments = [
             jobs.JobEnvironment(
                 environment_key="sdp_meta_cli_env",
                 spec=compute.Environment(client="1",
@@ -317,7 +317,7 @@ class SDPMeta:
         ]
         return self._ws.jobs.create(
             name="sdp_meta_onboarding_job",
-            environments=None if not cmd.serverless else sdpmeta_environments,
+            environments=None if not cmd.serverless else sdp_meta_environments,
             tasks=[
                 jobs.Task(
                     task_key="sdp_meta_onbarding_task",
@@ -326,7 +326,7 @@ class SDPMeta:
                     environment_key="sdp_meta_cli_env" if cmd.serverless else None,
                     timeout_seconds=0,
                     python_wheel_task=jobs.PythonWheelTask(
-                        package_name="databricks_labs_sdpmeta",
+                        package_name="databricks_labs_sdp_meta",
                         entry_point="run",
                         named_parameters=named_parameters,
                     ),
@@ -343,8 +343,8 @@ class SDPMeta:
         named_parameters = {
             "onboard_layer": cmd.onboard_layer,
             "database":
-                f"{cmd.uc_catalog_name}.{cmd.sdpmeta_schema}"
-                if cmd.uc_enabled else cmd.sdpmeta_schema,
+                f"{cmd.uc_catalog_name}.{cmd.sdp_meta_schema}"
+                if cmd.uc_enabled else cmd.sdp_meta_schema,
             "import_author": cmd.import_author,
             "version": cmd.version,
             "overwrite": "True" if cmd.overwrite else "False",
@@ -352,9 +352,9 @@ class SDPMeta:
             "uc_enabled": "True" if cmd.uc_enabled else "False"
         }
         if cmd.uc_enabled:
-            named_parameters["onboarding_file_path"] = f"{cmd.uc_volume_path}/sdpmeta_conf/{cmd.onboarding_file_path}"
+            named_parameters["onboarding_file_path"] = f"{cmd.uc_volume_path}/sdp_meta_conf/{cmd.onboarding_file_path}"
         else:
-            named_parameters["onboarding_file_path"] = f"{cmd.dbfs_path}/sdpmeta_conf/{cmd.onboarding_file_path}"
+            named_parameters["onboarding_file_path"] = f"{cmd.dbfs_path}/sdp_meta_conf/{cmd.onboarding_file_path}"
         if cmd.onboard_layer == "bronze_silver":
             named_parameters["bronze_dataflowspec_table"] = cmd.bronze_dataflowspec_table
             named_parameters["silver_dataflowspec_table"] = cmd.silver_dataflowspec_table
@@ -391,21 +391,21 @@ class SDPMeta:
                 configuration["bronze.group"] = cmd.onboard_bronze_group
                 if cmd.uc_catalog_name:
                     configuration["bronze.dataflowspecTable"] = (
-                        f"{cmd.uc_catalog_name}.{cmd.sdpmeta_bronze_schema}.{cmd.dataflowspec_bronze_table}"
+                        f"{cmd.uc_catalog_name}.{cmd.sdp_meta_bronze_schema}.{cmd.dataflowspec_bronze_table}"
                     )
                 else:
                     configuration["bronze.dataflowspecTable"] = (
-                        f"{cmd.sdpmeta_bronze_schema}.{cmd.dataflowspec_bronze_table}"
+                        f"{cmd.sdp_meta_bronze_schema}.{cmd.dataflowspec_bronze_table}"
                     )
             if cmd.layer in ["silver", "bronze_silver"]:
                 configuration["silver.group"] = cmd.onboard_silver_group
                 if cmd.uc_catalog_name:
                     configuration["silver.dataflowspecTable"] = (
-                        f"{cmd.uc_catalog_name}.{cmd.sdpmeta_silver_schema}.{cmd.dataflowspec_silver_table}"
+                        f"{cmd.uc_catalog_name}.{cmd.sdp_meta_silver_schema}.{cmd.dataflowspec_silver_table}"
                     )
                 else:
                     configuration["silver.dataflowspecTable"] = (
-                        f"{cmd.sdpmeta_silver_schema}.{cmd.dataflowspec_silver_table}"
+                        f"{cmd.sdp_meta_silver_schema}.{cmd.dataflowspec_silver_table}"
                     )
         else:
             raise ValueError("layer must be one of bronze, silver, bronze_silver ")
@@ -492,12 +492,12 @@ class SDPMeta:
         onboarding_files_dir_path = self._wsi._question(
             "Provide onboarding files local directory", default=f'{cwd}/demo/')
         onboard_cmd_dict["onboarding_files_dir_path"] = f"file:/{onboarding_files_dir_path}"
-        onboard_cmd_dict["sdpmeta_schema"] = self._wsi._question(
+        onboard_cmd_dict["sdp_meta_schema"] = self._wsi._question(
             "Provide sdp meta schema name", default=f'sdp_meta_dataflowspecs_{uuid.uuid4().hex}')
         onboard_cmd_dict["bronze_schema"] = self._wsi._question(
-            "Provide sdp meta bronze layer schema name", default=f'sdpmeta_bronze_{uuid.uuid4().hex}')
+            "Provide sdp meta bronze layer schema name", default=f'sdp_meta_bronze_{uuid.uuid4().hex}')
         onboard_cmd_dict["silver_schema"] = self._wsi._question(
-            "Provide sdp meta silver layer schema name", default=f'sdpmeta_silver_{uuid.uuid4().hex}')
+            "Provide sdp meta silver layer schema name", default=f'sdp_meta_silver_{uuid.uuid4().hex}')
         onboard_cmd_dict["onboard_layer"] = self._wsi._choice(
             "Provide sdp meta layer", ['bronze', 'silver', 'bronze_silver'])
         if onboard_cmd_dict["onboard_layer"] in ["bronze", "bronze_silver"]:
@@ -560,7 +560,7 @@ class SDPMeta:
                 "Provide sdp meta layer", ['bronze', 'silver', 'bronze_silver'])
             if deploy_cmd_dict["layer"] == "bronze" or deploy_cmd_dict["layer"] == "bronze_silver":
                 if deploy_cmd_dict["uc_enabled"]:
-                    deploy_cmd_dict["sdpmeta_bronze_schema"] = self._get_schema_from_json(oc_job_details_json)
+                    deploy_cmd_dict["sdp_meta_bronze_schema"] = self._get_schema_from_json(oc_job_details_json)
                     deploy_cmd_dict["dataflowspec_bronze_table"] = oc_job_details_json["bronze_dataflowspec_table"]
                 else:
                     deploy_cmd_dict["dataflowspec_bronze_path"] = oc_job_details_json["bronze_dataflowspec_path"]
@@ -568,7 +568,7 @@ class SDPMeta:
                     "Provide sdp meta bronze onboard group")
             if deploy_cmd_dict["layer"] == "silver" or deploy_cmd_dict["layer"] == "bronze_silver":
                 if deploy_cmd_dict["uc_enabled"]:
-                    deploy_cmd_dict["sdpmeta_silver_schema"] = self._get_schema_from_json(oc_job_details_json)
+                    deploy_cmd_dict["sdp_meta_silver_schema"] = self._get_schema_from_json(oc_job_details_json)
                     deploy_cmd_dict["dataflowspec_silver_table"] = oc_job_details_json["silver_dataflowspec_table"]
                 else:
                     deploy_cmd_dict["dataflowspec_silver_path"] = oc_job_details_json["silver_dataflowspec_path"]
@@ -594,7 +594,7 @@ class SDPMeta:
             if deploy_cmd_dict["layer"] in ["bronze", "bronze_silver"]:
                 deploy_cmd_dict["onboard_bronze_group"] = self._wsi._question(
                     "Provide sdp meta onboard bronze group")
-                deploy_cmd_dict["sdpmeta_bronze_schema"] = self._wsi._question(
+                deploy_cmd_dict["sdp_meta_bronze_schema"] = self._wsi._question(
                     "Provide sdp_meta bronze dataflowspec schema name")
                 deploy_cmd_dict["dataflowspec_bronze_table"] = self._wsi._question(
                     "Provide bronze dataflowspec table name", default='bronze_dataflowspec')
@@ -604,7 +604,7 @@ class SDPMeta:
             if deploy_cmd_dict["layer"] in ["silver", "bronze_silver"]:
                 deploy_cmd_dict["onboard_silver_group"] = self._wsi._question(
                     "Provide sdp meta silver onboard group")
-                deploy_cmd_dict["sdpmeta_silver_schema"] = self._wsi._question(
+                deploy_cmd_dict["sdp_meta_silver_schema"] = self._wsi._question(
                     "Provide sdp_meta silver dataflowspec schema name")
                 deploy_cmd_dict["dataflowspec_silver_table"] = self._wsi._question(
                     "Provide silver dataflowspec table name", default='silver_dataflowspec')
@@ -651,19 +651,19 @@ class SDPMeta:
         onboard_cmd_dict["onboarding_files_dir_path"] = f"file:/{onboarding_files_dir_path}"
 
         # Get schema names
-        onboard_cmd_dict["sdpmeta_schema"] = form_data.get(
-            'sdpmeta_schema', f'sdp_meta_dataflowspecs_{uuid.uuid4().hex}'
+        onboard_cmd_dict["sdp_meta_schema"] = form_data.get(
+            'sdp_meta_schema', f'sdp_meta_dataflowspecs_{uuid.uuid4().hex}'
         )
-        onboard_cmd_dict["bronze_schema"] = form_data.get('bronze_schema', f'sdpmeta_bronze_{uuid.uuid4().hex}')
-        onboard_cmd_dict["silver_schema"] = form_data.get('silver_schema', f'sdpmeta_silver_{uuid.uuid4().hex}')
+        onboard_cmd_dict["bronze_schema"] = form_data.get('bronze_schema', f'sdp_meta_bronze_{uuid.uuid4().hex}')
+        onboard_cmd_dict["silver_schema"] = form_data.get('silver_schema', f'sdp_meta_silver_{uuid.uuid4().hex}')
 
-        # Map sdpmeta_layer value from form to expected values
+        # Map sdp_meta_layer value from form to expected values
         layer_map = {
             "0": "bronze",
             "1": "bronze_silver",
             "2": "silver"
         }
-        onboard_cmd_dict["onboard_layer"] = layer_map.get(form_data.get('sdpmeta_layer'), 'bronze_silver')
+        onboard_cmd_dict["onboard_layer"] = layer_map.get(form_data.get('sdp_meta_layer'), 'bronze_silver')
 
         # Handle layer-specific settings
         if onboard_cmd_dict["onboard_layer"] == "bronze" or onboard_cmd_dict["onboard_layer"] == "bronze_silver":
@@ -710,14 +710,14 @@ class SDPMeta:
             deploy_cmd_dict["layer"] = input_params.get("layer")
             if deploy_cmd_dict["layer"] in ["bronze", "bronze_silver"]:
                 if deploy_cmd_dict["uc_enabled"]:
-                    deploy_cmd_dict["sdpmeta_bronze_schema"] = self._get_schema_from_json(oc_job_details_json)
+                    deploy_cmd_dict["sdp_meta_bronze_schema"] = self._get_schema_from_json(oc_job_details_json)
                     deploy_cmd_dict["dataflowspec_bronze_table"] = oc_job_details_json["bronze_dataflowspec_table"]
                 else:
                     deploy_cmd_dict["dataflowspec_bronze_path"] = oc_job_details_json["bronze_dataflowspec_path"]
                 deploy_cmd_dict["onboard_bronze_group"] = input_params.get("onboard_bronze_group")
             if deploy_cmd_dict["layer"] in ["silver", "bronze_silver"]:
                 if deploy_cmd_dict["uc_enabled"]:
-                    deploy_cmd_dict["sdpmeta_silver_schema"] = self._get_schema_from_json(oc_job_details_json)
+                    deploy_cmd_dict["sdp_meta_silver_schema"] = self._get_schema_from_json(oc_job_details_json)
                     deploy_cmd_dict["dataflowspec_silver_table"] = oc_job_details_json["silver_dataflowspec_table"]
                 else:
                     deploy_cmd_dict["dataflowspec_silver_path"] = oc_job_details_json["silver_dataflowspec_path"]
@@ -734,7 +734,7 @@ class SDPMeta:
             deploy_cmd_dict["layer"] = input_params.get("layer")
             if deploy_cmd_dict["layer"] in ["bronze", "bronze_silver"]:
                 deploy_cmd_dict["onboard_bronze_group"] = input_params.get("onboard_bronze_group")
-                deploy_cmd_dict["sdpmeta_bronze_schema"] = input_params.get("sdpmeta_bronze_schema")
+                deploy_cmd_dict["sdp_meta_bronze_schema"] = input_params.get("sdp_meta_bronze_schema")
                 deploy_cmd_dict["dataflowspec_bronze_table"] = input_params.get("dataflowspec_bronze_table",
                                                                                 "bronze_dataflowspec")
                 if not deploy_cmd_dict["uc_enabled"]:
@@ -744,7 +744,7 @@ class SDPMeta:
                     )
             if deploy_cmd_dict["layer"] in ["silver", "bronze_silver"]:
                 deploy_cmd_dict["onboard_silver_group"] = input_params.get("onboard_silver_group")
-                deploy_cmd_dict["sdpmeta_silver_schema"] = input_params.get("sdpmeta_silver_schema")
+                deploy_cmd_dict["sdp_meta_silver_schema"] = input_params.get("sdp_meta_silver_schema")
                 deploy_cmd_dict["dataflowspec_silver_table"] = input_params.get("dataflowspec_silver_table",
                                                                                 "silver_dataflowspec")
                 if not deploy_cmd_dict["uc_enabled"]:
@@ -765,7 +765,7 @@ class SDPMeta:
     def update_ws_onboarding_paths(self, cmd: OnboardCommand):
         """Create onboarding file for cloudfiles as source."""
         string_subs = {
-            "{uc_volume_path}": f"{cmd.uc_volume_path}/sdpmeta_conf/",
+            "{uc_volume_path}": f"{cmd.uc_volume_path}/sdp_meta_conf/",
             "{uc_catalog_name}": cmd.uc_catalog_name,
             "{bronze_schema}": cmd.bronze_schema,
             "{silver_schema}": cmd.silver_schema,
@@ -782,28 +782,28 @@ class SDPMeta:
         cmd.onboarding_file_path = updated_ob_file_path
 
 
-def onboard(sdpmeta: SDPMeta):
+def onboard(sdp_meta: SDPMeta):
     logger.info("Please answer a couple of questions to for launching SDP META onboarding job")
-    cmd = sdpmeta._load_onboard_config()
-    sdpmeta.onboard(cmd)
+    cmd = sdp_meta._load_onboard_config()
+    sdp_meta.onboard(cmd)
 
 
-def onboard_ui(sdpmeta: SDPMeta, form_data):
+def onboard_ui(sdp_meta: SDPMeta, form_data):
     logger.info("Please answer a couple of questions to for launching SDP META onboarding job")
-    cmd = sdpmeta._load_onboard_config_ui(form_data)
-    sdpmeta.onboard(cmd)
+    cmd = sdp_meta._load_onboard_config_ui(form_data)
+    sdp_meta.onboard(cmd)
 
 
-def deploy(sdpmeta: SDPMeta):
+def deploy(sdp_meta: SDPMeta):
     logger.info("Please answer a couple of questions to for launching SDP META deployment job")
-    cmd = sdpmeta._load_deploy_config()
-    sdpmeta.deploy(cmd)
+    cmd = sdp_meta._load_deploy_config()
+    sdp_meta.deploy(cmd)
 
 
-def deploy_ui(sdpmeta: SDPMeta, form_data):
+def deploy_ui(sdp_meta: SDPMeta, form_data):
     logger.info("Please answer a couple of questions to for launching SDP META deployment job")
-    cmd = sdpmeta._load_deploy_config_ui(form_data)
-    sdpmeta.deploy(cmd)
+    cmd = sdp_meta._load_deploy_config_ui(form_data)
+    sdp_meta.deploy(cmd)
 
 
 MAPPING = {
@@ -833,11 +833,11 @@ def main(raw):
     version = __about__.__version__
     # Support both old and new product names
     ws = WorkspaceClient(product='sdp-meta', product_version=version)
-    sdpmeta = SDPMeta(ws)
+    sdp_meta = SDPMeta(ws)
     if command in ["onboard_ui", "deploy_ui"]:
-        MAPPING[command](sdpmeta, payload)
+        MAPPING[command](sdp_meta, payload)
     else:
-        MAPPING[command](sdpmeta)
+        MAPPING[command](sdp_meta)
 
 
 if __name__ == "__main__":

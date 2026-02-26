@@ -1,6 +1,6 @@
 """CLI entrypoint for dlt-meta compatibility wrapper.
 
-This redirects all commands to databricks.labs.sdpmeta with deprecation warnings.
+This redirects all commands to databricks.labs.sdp_meta with deprecation warnings.
 """
 import sys
 import warnings
@@ -22,7 +22,7 @@ def main(raw):
     )
 
     # Forward to the actual CLI implementation
-    from databricks.labs.sdpmeta.cli import main as sdp_meta_main
+    from databricks.labs.sdp_meta.cli import main as sdp_meta_main
     return sdp_meta_main(raw)
 
 

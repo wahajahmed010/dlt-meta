@@ -1,7 +1,7 @@
 """Tests for the dlt-meta backward compatibility layer.
 
 These tests verify that the old dlt_meta package (compat/) properly
-re-exports symbols from databricks.labs.sdpmeta with deprecation warnings.
+re-exports symbols from databricks.labs.sdp_meta with deprecation warnings.
 """
 import os
 import sys
@@ -41,24 +41,24 @@ class TestCompatDeprecationWarning(unittest.TestCase):
 
 
 class TestCompatReExports(unittest.TestCase):
-    """Test that old dlt_meta imports correctly re-export from sdpmeta."""
+    """Test that old dlt_meta imports correctly re-export from sdp_meta."""
 
-    def test_dltmeta_alias_is_sdpmeta(self):
+    def test_dltmeta_alias_is_sdp_meta(self):
         """DLTMeta class should be an alias for SDPMeta."""
         from dlt_meta import DLTMeta
-        from databricks.labs.sdpmeta.cli import SDPMeta
+        from databricks.labs.sdp_meta.cli import SDPMeta
         self.assertIs(DLTMeta, SDPMeta)
 
     def test_dataflow_pipeline_reexport(self):
         """DataflowPipeline should be re-exported from dlt_meta."""
         from dlt_meta import DataflowPipeline
-        from databricks.labs.sdpmeta.dataflow_pipeline import DataflowPipeline as Original
+        from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline as Original
         self.assertIs(DataflowPipeline, Original)
 
     def test_dataflow_spec_reexport(self):
         """BronzeDataflowSpec and SilverDataflowSpec should be re-exported."""
         from dlt_meta import BronzeDataflowSpec, SilverDataflowSpec
-        from databricks.labs.sdpmeta.dataflow_spec import (
+        from databricks.labs.sdp_meta.dataflow_spec import (
             BronzeDataflowSpec as OrigBronze,
             SilverDataflowSpec as OrigSilver,
         )
@@ -68,31 +68,31 @@ class TestCompatReExports(unittest.TestCase):
     def test_onboard_command_reexport(self):
         """OnboardCommand should be re-exported from dlt_meta."""
         from dlt_meta import OnboardCommand
-        from databricks.labs.sdpmeta.cli import OnboardCommand as Original
+        from databricks.labs.sdp_meta.cli import OnboardCommand as Original
         self.assertIs(OnboardCommand, Original)
 
     def test_deploy_command_reexport(self):
         """DeployCommand should be re-exported from dlt_meta."""
         from dlt_meta import DeployCommand
-        from databricks.labs.sdpmeta.cli import DeployCommand as Original
+        from databricks.labs.sdp_meta.cli import DeployCommand as Original
         self.assertIs(DeployCommand, Original)
 
     def test_runner_notebook_alias(self):
         """DLT_META_RUNNER_NOTEBOOK should alias SDP_META_RUNNER_NOTEBOOK."""
         from dlt_meta import DLT_META_RUNNER_NOTEBOOK
-        from databricks.labs.sdpmeta.cli import SDP_META_RUNNER_NOTEBOOK
+        from databricks.labs.sdp_meta.cli import SDP_META_RUNNER_NOTEBOOK
         self.assertEqual(DLT_META_RUNNER_NOTEBOOK, SDP_META_RUNNER_NOTEBOOK)
 
     def test_pipeline_readers_reexport(self):
         """PipelineReaders should be re-exported from dlt_meta."""
         from dlt_meta import PipelineReaders
-        from databricks.labs.sdpmeta.pipeline_readers import PipelineReaders as Original
+        from databricks.labs.sdp_meta.pipeline_readers import PipelineReaders as Original
         self.assertIs(PipelineReaders, Original)
 
     def test_pipeline_writers_reexport(self):
         """AppendFlowWriter and DLTSinkWriter should be re-exported from dlt_meta."""
         from dlt_meta import AppendFlowWriter, DLTSinkWriter
-        from databricks.labs.sdpmeta.pipeline_writers import (
+        from databricks.labs.sdp_meta.pipeline_writers import (
             AppendFlowWriter as OrigAppend,
             DLTSinkWriter as OrigSink,
         )

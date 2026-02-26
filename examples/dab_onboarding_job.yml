@@ -10,7 +10,7 @@ resources:
       tasks:
         - task_key: onboard_bronze_silver_tables
           python_wheel_task:
-            package_name: databricks_labs_sdpmeta
+            package_name: databricks_labs_sdp_meta
             entry_point: run
             named_parameters:
               database: ${var.${bundle.target}_catalog_name}.${var.sdp_meta_schema}
@@ -29,7 +29,7 @@ resources:
 
         - task_key: onboard_silver_fanout_tables
           python_wheel_task:
-            package_name: databricks_labs_sdpmeta
+            package_name: databricks_labs_sdp_meta
             entry_point: run
             named_parameters:
               database: ${var.${bundle.target}_catalog_name}.${var.sdp_meta_schema}

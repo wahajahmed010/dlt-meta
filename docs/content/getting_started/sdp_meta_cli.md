@@ -54,8 +54,8 @@ draft: false
 
 8. Set environment variables:
     ```commandline
-    sdpmeta_home=$(pwd)
-    export PYTHONPATH=$sdpmeta_home
+    sdp_meta_home=$(pwd)
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 ![onboardingDLTMeta.gif](/images/onboardingDLTMeta.gif)

@@ -42,16 +42,16 @@ This demo will perform following tasks:
 
 6. Set python environment variable into terminal
     ```commandline
-    sdpmeta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
 
     ```commandline
-    export PYTHONPATH=$sdpmeta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. Run the command:
     ```commandline
-    python demo/launch_af_cloudfiles_demo.py --cloud_provider_name=aws --dbr_version=15.3.x-scala2.12 --dbfs_path=dbfs:/tmp/SDP-META/demo/ --uc_catalog_name=sdpmeta_uc
+    python demo/launch_af_cloudfiles_demo.py --cloud_provider_name=aws --dbr_version=15.3.x-scala2.12 --dbfs_path=dbfs:/tmp/SDP-META/demo/ --uc_catalog_name=sdp_meta_uc
     ```
 
 - cloud_provider_name : aws or azure or gcp

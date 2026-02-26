@@ -28,7 +28,7 @@
 
 1. Create Custom App:
    ```commandline
-   databricks apps create demo-sdpmeta
+   databricks apps create demo-sdp-meta
    ```
    > Note: Wait for command completion (a few minutes)
 
@@ -40,7 +40,7 @@
    databricks sync . /Workspace/Users/<user1.user2>@databricks.com/testapp
    
    # Deploy the app
-   databricks apps deploy demo-sdpmeta --source-code-path /Workspace/Users/<user1.user2>@databricks.com/testapp
+   databricks apps deploy demo-sdp-meta --source-code-path /Workspace/Users/<user1.user2>@databricks.com/testapp
    ```
 
 3. Access the App:
@@ -75,7 +75,7 @@
 The app creates a dedicated user account that:
 - Handles onboarding, deployment, and demo execution
 - Requires specific permissions for UC catalogs and schemas
-- Example username format: "app-40zbx9_demo-sdpmeta"
+- Example username format: "app-40zbx9_demo-sdp-meta"
 
 ### Getting Started
 

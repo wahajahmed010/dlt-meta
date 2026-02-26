@@ -14,10 +14,10 @@ from databricks.sdk.service import compute
 from databricks.sdk.service.sql import EndpointInfoWarehouseType
 from databricks.sdk.service.workspace import ImportFormat
 
-from databricks.labs.sdpmeta.__about__ import __version__
-from databricks.labs.sdpmeta.config import WorkspaceConfig
+from databricks.labs.sdp_meta.__about__ import __version__
+from databricks.labs.sdp_meta.config import WorkspaceConfig
 
-logger = logging.getLogger("databricks.labs.sdpmeta")
+logger = logging.getLogger("databricks.labs.sdp_meta")
 
 
 class WorkspaceInstaller:
