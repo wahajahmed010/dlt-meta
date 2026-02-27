@@ -28,30 +28,12 @@ draft: false
 10. Click Add.
 
 11. In Parameters, select keyword argument then select JSON. Past below json parameters with :
-- Without Unity Cataglog
-```json 
-    {                   
-        "onboard_layer": "bronze_silver",
-        "database": "dlt_demo",
-        "onboarding_file_path": "dbfs:/sdp-meta/conf/onboarding.json",
-        "silver_dataflowspec_table": "silver_dataflowspec_table",
-        "silver_dataflowspec_path": "dbfs:/onboarding_tables_cdc/silver",
-        "bronze_dataflowspec_table": "bronze_dataflowspec_table",
-        "import_author": "Ravi",
-        "version": "v1",
-        "bronze_dataflowspec_path": "dbfs:/onboarding_tables_cdc/bronze",
-        "onboard_layer": "bronze_silver",
-        "uc_enabled": "False",
-        "overwrite": "True",
-        "env": "dev"
-    } 
-```
-- with Unity catalog
+- With Unity Catalog
 ```json 
     {                   
         "onboard_layer": "bronze_silver",
         "database": "uc_name.dlt_demo",
-        "onboarding_file_path": "dbfs:/sdp-meta/conf/onboarding.json",
+        "onboarding_file_path": "/Volumes/<catalog>/<schema>/<volume>/sdp-meta/conf/onboarding.json",
         "silver_dataflowspec_table": "silver_dataflowspec_table",
         "bronze_dataflowspec_table": "bronze_dataflowspec_table",
         "import_author": "Ravi",
@@ -74,29 +56,11 @@ Alternatly you can enter keyword arguments, click + Add and enter a key and valu
 ### Option#2: Databricks Notebook 
 1. Copy below code to databricks notebook cells
 ```%pip install databricks-labs-sdp-meta```
-- without unity catalog
-```python 
-onboarding_params_map = {
-		"database": "dlt_demo",
-		"onboarding_file_path": "dbfs:/sdp-meta/conf/onboarding.json",
-		"bronze_dataflowspec_table": "bronze_dataflowspec_table", 
-		"bronze_dataflowspec_path": "dbfs:/onboarding_tables_cdc/bronze",                       
-		"silver_dataflowspec_table": "silver_dataflowspec_table",
-		"silver_dataflowspec_path": "dbfs:/onboarding_tables_cdc/silver",
-		"overwrite": "True",
-		"env": "dev",
-		"version": "v1",
-		"import_author": "Ravi"
-		}
-
-from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
-OnboardDataflowspec(spark, onboarding_params_map).onboard_dataflow_specs()
-```
-- with unity catalog
+- With Unity Catalog
 ```python 
 onboarding_params_map = {
 		"database": "uc_name.dlt_demo",
-		"onboarding_file_path": "dbfs:/sdp-meta/conf/onboarding.json",
+		"onboarding_file_path": "/Volumes/<catalog>/<schema>/<volume>/sdp-meta/conf/onboarding.json",
 		"bronze_dataflowspec_table": "bronze_dataflowspec_table", 
 		"silver_dataflowspec_table": "silver_dataflowspec_table",
 		"overwrite": "True",

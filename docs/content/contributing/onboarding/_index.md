@@ -59,7 +59,7 @@ In case you may not be able to fork this repo because the repository is outside 
 
 * Integration Tests are at integration\_tests folder  
   * To run integration test run file run\_integration\_tests.py with mandatory required argument as below  
-  * e.g. run\_integration\_tests.py \--uc\_catalog\_name datta\_demo \--cloud\_provider\_name aws \--dbr\_version 14.3 \--source cloudfiles \--dbfs\_path "dbfs:/tmp/SDP-META/" \--profile DEFAULT
+  * e.g. run\_integration\_tests.py \--uc\_catalog\_name datta\_demo \--cloud\_provider\_name aws \--dbr\_version 14.3 \--source cloudfiles \--profile DEFAULT
 
 ## Step 5 \- Find Beginner-Friendly Issues
 

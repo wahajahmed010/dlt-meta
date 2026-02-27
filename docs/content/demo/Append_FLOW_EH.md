@@ -63,7 +63,6 @@ draft: false
     - cloud_provider_name: Cloud provider name e.g. aws or azure 
     - dbr_version:  Databricks Runtime Version e.g. 15.3.x-scala2.12
     - uc_catalog_name : unity catalog name e.g. sdp_meta_uc
-    - dbfs_path: Path on your Databricks workspace where demo will be copied for launching SDP-META Pipelines e.g. dbfs:/tmp/SDP-META/demo/ 
     - eventhub_namespace: Eventhub namespace e.g. sdp_meta
     - eventhub_name : Primary Eventhubname e.g. sdp_meta_demo
     - eventhub_name_append_flow: Secondary eventhub name for appendflow feed e.g. sdp_meta_demo_af

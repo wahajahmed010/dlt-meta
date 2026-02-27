@@ -51,12 +51,11 @@ This demo will perform following tasks:
 
 7. Run the command:
     ```commandline
-    python demo/launch_af_cloudfiles_demo.py --cloud_provider_name=aws --dbr_version=15.3.x-scala2.12 --dbfs_path=dbfs:/tmp/SDP-META/demo/ --uc_catalog_name=sdp_meta_uc
+    python demo/launch_af_cloudfiles_demo.py --cloud_provider_name=aws --dbr_version=15.3.x-scala2.12 --uc_catalog_name=sdp_meta_uc
     ```
 
 - cloud_provider_name : aws or azure or gcp
 - db_version : Databricks Runtime Version
-- dbfs_path : Path on your Databricks workspace where demo will be copied for launching SDP-META Pipelines
 - uc_catalog_name: Unity catalog name
 - you can provide `--profile=databricks_profile name` in case you already have databricks cli otherwise command prompt will ask host and token
 

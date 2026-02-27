@@ -37,7 +37,7 @@ Yes! Please follow below steps:
     {                   
             "onboard_layer": "bronze",
             "database": "dlt_demo",
-            "onboarding_file_path": "dbfs:/sdp-meta/conf/onboarding.json",
+            "onboarding_file_path": "/Volumes/<catalog>/<schema>/<volume>/sdp-meta/conf/onboarding.json",
             "bronze_dataflowspec_table": "bronze_dataflowspec_table",
             "import_author": "Ravi",
             "version": "v1",
@@ -50,7 +50,7 @@ Yes! Please follow below steps:
 ```
         onboarding_params_map = {
                 "database": "uc_name.dlt_demo",
-                "onboarding_file_path": "dbfs:/sdp-meta/conf/onboarding.json",
+                "onboarding_file_path": "/Volumes/<catalog>/<schema>/<volume>/sdp-meta/conf/onboarding.json",
                 "bronze_dataflowspec_table": "bronze_dataflowspec_table", 
                 "overwrite": "True",
                 "env": "dev",
@@ -72,7 +72,7 @@ Yes! Please follow below steps:
     {                   
             "onboard_layer": "silver",
             "database": "dlt_demo",
-            "onboarding_file_path": "dbfs:/sdp-meta/conf/onboarding.json",
+            "onboarding_file_path": "/Volumes/<catalog>/<schema>/<volume>/sdp-meta/conf/onboarding.json",
             "silver_dataflowspec_table": "silver_dataflowspec_table",
             "import_author": "Ravi",
             "version": "v1",
@@ -85,7 +85,7 @@ Yes! Please follow below steps:
 ```
         onboarding_params_map = {
                 "database": "uc_name.dlt_demo",
-                "onboarding_file_path": "dbfs:/sdp-meta/conf/onboarding.json",
+                "onboarding_file_path": "/Volumes/<catalog>/<schema>/<volume>/sdp-meta/conf/onboarding.json",
                 "silver_dataflowspec_table": "silver_dataflowspec_table", 
                 "overwrite": "True",
                 "env": "dev",
