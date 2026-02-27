@@ -70,8 +70,7 @@ class DLTMETAFEHDemo(DLTMETARunner):
             eventhub_namespace=self.args["eventhub_namespace"],
             eventhub_port=self.args["eventhub_port"]
         )
-        self.validate_uc_catalog_name(self.args['uc_catalog_name'])
-        runner_conf.uc_catalog_name = self.args['uc_catalog_name']
+        runner_conf.uc_catalog_name = self.validate_uc_catalog_name(self.args.get('uc_catalog_name'))
         runner_conf.runners_full_local_path = 'demo/notebooks/afam_eventhub_runners'
         return runner_conf
 

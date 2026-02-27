@@ -19,6 +19,37 @@ from src.install import WorkspaceInstaller
 logger = logging.getLogger('databricks.labs.dltmeta')
 
 
+def validate_uc_catalog_name(name):
+    """Validate and normalize a Unity Catalog name.
+
+    Non-delimited identifiers can only contain ASCII letters, digits, and
+    underscores and must not start with a digit. Delimited identifiers
+    (wrapped in backticks) can use any unicode character.
+
+    If the name contains characters not valid for a non-delimited identifier,
+    it is automatically wrapped in backticks to form a delimited identifier.
+
+    Args:
+        name: The catalog name to validate.
+
+    Returns:
+        The validated and possibly backtick-wrapped catalog name.
+
+    Raises:
+        ValueError: If the name is None or empty.
+    """
+    if name is None:
+        raise ValueError("'uc_catalog_name' is required but was not provided.")
+    if not name.strip():
+        raise ValueError("'uc_catalog_name' must not be empty.")
+    stripped = name.strip('`')
+    if not stripped:
+        raise ValueError("'uc_catalog_name' must not be empty.")
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', stripped):
+        return f'`{stripped}`'
+    return stripped
+
+
 DLT_META_RUNNER_NOTEBOOK = """
 # Databricks notebook source
 # MAGIC %pip install dlt-meta=={version}
@@ -69,12 +100,7 @@ class OnboardCommand:
         if self.onboard_layer.lower() not in ["bronze", "silver", "bronze_silver"]:
             raise ValueError("onboard_layer must be one of bronze, silver, bronze_silver")
         if self.uc_enabled and self.uc_catalog_name:
-            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', self.uc_catalog_name):
-                raise ValueError(
-                    f"Invalid uc_catalog_name: '{self.uc_catalog_name}'. "
-                    "Can only contain ASCII letters ('a'-'z', 'A'-'Z'), "
-                    "digits ('0'-'9'), and underscores ('_'). Must not start with a digit."
-                )
+            self.uc_catalog_name = validate_uc_catalog_name(self.uc_catalog_name)
         # if self.uc_enabled == "":
         #     raise ValueError("uc_enabled is required, please set to True or False")
         if not self.uc_enabled and not self.dbfs_path:
@@ -134,12 +160,7 @@ class DeployCommand:
         if self.uc_enabled and not self.uc_catalog_name:
             raise ValueError("uc_catalog_name is required")
         if self.uc_enabled and self.uc_catalog_name:
-            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', self.uc_catalog_name):
-                raise ValueError(
-                    f"Invalid uc_catalog_name: '{self.uc_catalog_name}'. "
-                    "Can only contain ASCII letters ('a'-'z', 'A'-'Z'), "
-                    "digits ('0'-'9'), and underscores ('_'). Must not start with a digit."
-                )
+            self.uc_catalog_name = validate_uc_catalog_name(self.uc_catalog_name)
         if not self.serverless and not self.num_workers:
             raise ValueError("num_workers is required")
         if not self.layer:

@@ -4,7 +4,10 @@ from unittest.mock import MagicMock, patch, mock_open
 import json
 from databricks.sdk.service.catalog import VolumeType
 from src.__about__ import __version__
-from src.cli import DLT_META_RUNNER_NOTEBOOK, DeployCommand, DLTMeta, OnboardCommand, main
+from src.cli import (
+    DLT_META_RUNNER_NOTEBOOK, DeployCommand, DLTMeta, OnboardCommand,
+    main, validate_uc_catalog_name
+)
 
 
 class CliTests(unittest.TestCase):
@@ -1303,28 +1306,33 @@ class CliTests(unittest.TestCase):
             )
         self.assertIn("version is required", str(context.exception))
 
-    def test_onboard_command_invalid_uc_catalog_name(self):
-        """Test OnboardCommand rejects invalid uc_catalog_name per Databricks identifier rules."""
-        invalid_names = ["my-catalog", "1starts_with_digit", "has space", "dot.name", "sp@cial"]
-        for name in invalid_names:
-            with self.assertRaises(ValueError) as context:
-                OnboardCommand(
-                    onboarding_file_path="tests/resources/onboarding.json",
-                    onboarding_files_dir_path="tests/resources/",
-                    onboard_layer="bronze",
-                    env="dev",
-                    import_author="John Doe",
-                    version="1.0",
-                    dlt_meta_schema="dlt_meta",
-                    uc_enabled=True,
-                    uc_catalog_name=name,
-                    serverless=True,
-                    bronze_dataflowspec_table="bronze_dataflowspec",
-                    overwrite=True,
-                )
-            self.assertIn("Invalid uc_catalog_name", str(context.exception))
+    def test_onboard_command_uc_catalog_name_auto_delimit(self):
+        """Test OnboardCommand auto-wraps non-standard uc_catalog_name with backticks."""
+        delimit_cases = {
+            "my-catalog": "`my-catalog`",
+            "1starts_with_digit": "`1starts_with_digit`",
+            "has space": "`has space`",
+            "dot.name": "`dot.name`",
+            "sp@cial": "`sp@cial`",
+        }
+        for name, expected in delimit_cases.items():
+            cmd = OnboardCommand(
+                onboarding_file_path="tests/resources/onboarding.json",
+                onboarding_files_dir_path="tests/resources/",
+                onboard_layer="bronze",
+                env="dev",
+                import_author="John Doe",
+                version="1.0",
+                dlt_meta_schema="dlt_meta",
+                uc_enabled=True,
+                uc_catalog_name=name,
+                serverless=True,
+                bronze_dataflowspec_table="bronze_dataflowspec",
+                overwrite=True,
+            )
+            self.assertEqual(cmd.uc_catalog_name, expected)
 
-        # Valid names should NOT raise
+        # Valid non-delimited names should stay unchanged
         valid_names = ["my_catalog", "Catalog1", "_private", "ABC_123"]
         for name in valid_names:
             cmd = OnboardCommand(
@@ -1343,25 +1351,30 @@ class CliTests(unittest.TestCase):
             )
             self.assertEqual(cmd.uc_catalog_name, name)
 
-    def test_deploy_command_invalid_uc_catalog_name(self):
-        """Test DeployCommand rejects invalid uc_catalog_name per Databricks identifier rules."""
-        invalid_names = ["my-catalog", "1starts_with_digit", "has space", "dot.name", "sp@cial"]
-        for name in invalid_names:
-            with self.assertRaises(ValueError) as context:
-                DeployCommand(
-                    layer="bronze",
-                    onboard_bronze_group="A1",
-                    dlt_meta_bronze_schema="dlt_meta",
-                    dataflowspec_bronze_table="dataflowspec_table",
-                    pipeline_name="test_pipeline",
-                    dlt_target_schema="target_schema",
-                    uc_enabled=True,
-                    uc_catalog_name=name,
-                    serverless=True,
-                )
-            self.assertIn("Invalid uc_catalog_name", str(context.exception))
+    def test_deploy_command_uc_catalog_name_auto_delimit(self):
+        """Test DeployCommand auto-wraps non-standard uc_catalog_name with backticks."""
+        delimit_cases = {
+            "my-catalog": "`my-catalog`",
+            "1starts_with_digit": "`1starts_with_digit`",
+            "has space": "`has space`",
+            "dot.name": "`dot.name`",
+            "sp@cial": "`sp@cial`",
+        }
+        for name, expected in delimit_cases.items():
+            cmd = DeployCommand(
+                layer="bronze",
+                onboard_bronze_group="A1",
+                dlt_meta_bronze_schema="dlt_meta",
+                dataflowspec_bronze_table="dataflowspec_table",
+                pipeline_name="test_pipeline",
+                dlt_target_schema="target_schema",
+                uc_enabled=True,
+                uc_catalog_name=name,
+                serverless=True,
+            )
+            self.assertEqual(cmd.uc_catalog_name, expected)
 
-        # Valid names should NOT raise
+        # Valid non-delimited names should stay unchanged
         valid_names = ["my_catalog", "Catalog1", "_private", "ABC_123"]
         for name in valid_names:
             cmd = DeployCommand(
@@ -1376,6 +1389,17 @@ class CliTests(unittest.TestCase):
                 serverless=True,
             )
             self.assertEqual(cmd.uc_catalog_name, name)
+
+    def test_validate_uc_catalog_name_empty_and_none(self):
+        """Test validate_uc_catalog_name raises on None and empty strings."""
+        with self.assertRaises(ValueError):
+            validate_uc_catalog_name(None)
+        with self.assertRaises(ValueError):
+            validate_uc_catalog_name("")
+        with self.assertRaises(ValueError):
+            validate_uc_catalog_name("   ")
+        with self.assertRaises(ValueError):
+            validate_uc_catalog_name("``")
 
     def test_deploy_command_validation_cases(self):
         """Test DeployCommand validation cases for missing coverage."""

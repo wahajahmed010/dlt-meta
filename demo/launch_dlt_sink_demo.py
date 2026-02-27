@@ -45,11 +45,11 @@ class DLTMETASinkDemo(DLTMETARunner):
             The initialized runner configuration.
         """
         run_id = uuid.uuid4().hex
-        self.validate_uc_catalog_name(self.args["uc_catalog_name"])
+        uc_catalog_name = self.validate_uc_catalog_name(self.args.get("uc_catalog_name"))
         runner_conf = DLTMetaRunnerConf(
             run_id=run_id,
             username=self.wsi._my_username,
-            uc_catalog_name=self.args["uc_catalog_name"],
+            uc_catalog_name=uc_catalog_name,
             int_tests_dir="demo",
             dlt_meta_schema=f"dlt_meta_dataflowspecs_demo_{run_id}",
             bronze_schema=f"dlt_meta_bronze_demo_{run_id}",

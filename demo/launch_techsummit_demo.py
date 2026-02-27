@@ -100,10 +100,10 @@ class DLTMETATechSummitDemo(DLTMETARunner):
                                    and self.args.__dict__['table_data_rows_count']
                                    else "10"),
         )
-        if self.args['uc_catalog_name']:
-            self.validate_uc_catalog_name(self.args['uc_catalog_name'])
-            runner_conf.uc_catalog_name = self.args['uc_catalog_name']
-            runner_conf.uc_volume_name = f"{self.args['uc_catalog_name']}_volume_{run_id}"
+        uc_catalog_name = self.args.get('uc_catalog_name')
+        if uc_catalog_name:
+            runner_conf.uc_catalog_name = self.validate_uc_catalog_name(uc_catalog_name)
+            runner_conf.uc_volume_name = f"{runner_conf.uc_catalog_name}_volume_{run_id}"
         return runner_conf
 
     def create_bronze_silver_dlt(self, runner_conf: DLTMetaRunnerConf):

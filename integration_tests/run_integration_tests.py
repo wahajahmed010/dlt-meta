@@ -171,25 +171,34 @@ class DLTMETARunner:
 
     @staticmethod
     def validate_uc_catalog_name(name):
-        """Validate that a Unity Catalog name follows Databricks naming rules.
+        """Validate and normalize a Unity Catalog name.
 
-        UC catalog names can only contain ASCII letters ('a'-'z', 'A'-'Z'),
-        digits ('0'-'9'), and underscores ('_'). Must not start with a digit.
+        Non-delimited identifiers can only contain ASCII letters, digits, and
+        underscores and must not start with a digit. Delimited identifiers
+        (wrapped in backticks) can use any unicode character.
+
+        If the name contains characters not valid for a non-delimited identifier,
+        it is automatically wrapped in backticks to form a delimited identifier.
 
         Args:
             name: The catalog name to validate.
 
+        Returns:
+            The validated and possibly backtick-wrapped catalog name.
+
         Raises:
-            ValueError: If the name is empty or contains invalid characters.
+            ValueError: If the name is None or empty.
         """
-        if not name or not name.strip():
+        if name is None:
+            raise ValueError("'uc_catalog_name' is required but was not provided.")
+        if not name.strip():
             raise ValueError("'uc_catalog_name' must not be empty.")
-        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
-            raise ValueError(
-                f"Invalid uc_catalog_name: '{name}'. "
-                "Can only contain ASCII letters ('a'-'z', 'A'-'Z'), "
-                "digits ('0'-'9'), and underscores ('_'). Must not start with a digit."
-            )
+        stripped = name.strip('`')
+        if not stripped:
+            raise ValueError("'uc_catalog_name' must not be empty.")
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', stripped):
+            return f'`{stripped}`'
+        return stripped
 
     def init_runner_conf(self) -> DLTMetaRunnerConf:
         """Initialize the runner configuration for running integration tests."""

@@ -50,9 +50,9 @@ class DLTMETADAISDemo(DLTMETARunner):
             # runners_full_local_path='./demo/dbc/dais_dlt_meta_runners.dbc',
             onboarding_file_path='demo/conf/onboarding.json'
         )
-        if self.args['uc_catalog_name']:
-            self.validate_uc_catalog_name(self.args['uc_catalog_name'])
-            runner_conf.uc_catalog_name = self.args['uc_catalog_name']
+        uc_catalog_name = self.args.get('uc_catalog_name')
+        if uc_catalog_name:
+            runner_conf.uc_catalog_name = self.validate_uc_catalog_name(uc_catalog_name)
             runner_conf.uc_volume_name = f"{runner_conf.uc_catalog_name}_dais_demo_{run_id}"
 
         return runner_conf
