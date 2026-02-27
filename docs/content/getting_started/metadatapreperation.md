@@ -15,13 +15,13 @@ conf/
         bronze_data_quality_expectations.json
 ```
 
-1. Create [onboarding.json](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/onboarding.template)
-2. Create [silver_transformations.json](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/silver_transformations.json)
-3. Create data quality rules json's for each entity e.g. [Data Quality Rules](https://github.com/databrickslabs/dlt-meta/tree/main/demo/conf/dqe/)
+1. Create [onboarding.json](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/onboarding.template)
+2. Create [silver_transformations.json](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/silver_transformations.json)
+3. Create data quality rules json's for each entity e.g. [Data Quality Rules](https://github.com/databrickslabs/sdp-meta/tree/main/demo/conf/dqe/)
 
-The `onboarding.json` file contains links to [silver_transformations.json](https://github.com/databrickslabs/dlt-meta/blob/3555aaa798881a9cfa65f89599f83d22d245d3c8/demo/conf/onboarding.template#L41C1-L42C1) and data quality expectation files [dqe](https://github.com/databrickslabs/dlt-meta/blob/3555aaa798881a9cfa65f89599f83d22d245d3c8/demo/conf/onboarding.template#L42).
+The `onboarding.json` file contains links to [silver_transformations.json](https://github.com/databrickslabs/sdp-meta/blob/3555aaa798881a9cfa65f89599f83d22d245d3c8/demo/conf/onboarding.template#L41C1-L42C1) and data quality expectation files [dqe](https://github.com/databrickslabs/sdp-meta/blob/3555aaa798881a9cfa65f89599f83d22d245d3c8/demo/conf/onboarding.template#L42).
 
-### onboarding.json File structure: Examples( [Autoloader](https://github.com/databrickslabs/dlt-meta/blob/main/examples/cloudfiles-onboarding.template), [Eventhub](https://github.com/databrickslabs/dlt-meta/blob/main/examples/eventhub-onboarding.template), [Kafka](https://github.com/databrickslabs/dlt-meta/blob/main/examples/kafka-onboarding.template) )
+### onboarding.json File structure: Examples( [Autoloader](https://github.com/databrickslabs/sdp-meta/blob/main/examples/cloudfiles-onboarding.template), [Eventhub](https://github.com/databrickslabs/sdp-meta/blob/main/examples/eventhub-onboarding.template), [Kafka](https://github.com/databrickslabs/sdp-meta/blob/main/examples/kafka-onboarding.template) )
 `env` is your environment placeholder e.g `dev`, `prod`, `stag`
 | Field | Description |
 | :-----------: | :----------- |
@@ -70,7 +70,7 @@ The `onboarding.json` file contains links to [silver_transformations.json](https
 
 
 
-### Data Quality Rules File Structure([Examples](https://github.com/databrickslabs/dlt-meta/tree/main/examples/dqe))
+### Data Quality Rules File Structure([Examples](https://github.com/databrickslabs/sdp-meta/tree/main/examples/dqe))
 | Field | Description |
 | :-----------: | :----------- |
 | expect | Specify multiple data quality sql for each field when records that fail validation should be included in the target dataset| 
@@ -79,7 +79,7 @@ The `onboarding.json` file contains links to [silver_transformations.json](https
 | expect_or_quarantine  | Specify multiple data quality sql for each field when records that fails validation will be dropped from main table and inserted into quarantine table specified in dataflowspec (only applicable for Bronze layer) |
 
 
-### Silver transformation File Structure([Example](https://github.com/databrickslabs/dlt-meta/blob/main/examples/silver_transformations.json))
+### Silver transformation File Structure([Example](https://github.com/databrickslabs/sdp-meta/blob/main/examples/silver_transformations.json))
 | Field | Description |
 | :-----------: | :----------- |
 | target_table | Specify target table name : Type String | 

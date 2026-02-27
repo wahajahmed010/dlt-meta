@@ -1,12 +1,12 @@
- # [DLT-META](https://github.com/databrickslabs/dlt-meta) DEMOs
- 1. [DAIS 2023 DEMO](#dais-2023-demo): Showcases DLT-META's capabilities of creating Bronze and Silver pipelines with initial and incremental mode automatically.
+ # [SDP-META](https://github.com/databrickslabs/dlt-meta) DEMOs
+ 1. [DAIS 2023 DEMO](#dais-2023-demo): Showcases SDP-META's capabilities of creating Bronze and Silver pipelines with initial and incremental mode automatically.
  2. [Databricks Techsummit Demo](#databricks-tech-summit-fy2024-demo): 100s of data sources ingestion in bronze and silver pipelines automatically.
  3. [Append FLOW Autoloader Demo](#append-flow-autoloader-file-metadata-demo): Write to same target from multiple sources using [dlt.append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#append-flows)  and adding [File metadata column](https://docs.databricks.com/en/ingestion/file-metadata-column.html)
  4. [Append FLOW Eventhub Demo](#append-flow-eventhub-demo): Write to same target from multiple sources using [dlt.append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#append-flows)  and adding [File metadata column](https://docs.databricks.com/en/ingestion/file-metadata-column.html)
  5. [Silver Fanout Demo](#silver-fanout-demo): This demo showcases the implementation of fanout architecture in the silver layer.
  6. [Apply Changes From Snapshot Demo](#apply-changes-from-snapshot-demo): This demo showcases the implementation of ingesting from snapshots in bronze layer
  7. [Lakeflow Declarative Pipelines Sink Demo](#lakeflow-declarative-pipelines-sink-demo): This demo showcases the implementation of write to external sinks like delta and kafka
- 8. [DAB Demo](#dab-demo): This demo showcases how to use Databricks Assets Bundles with dlt-meta
+ 8. [DAB Demo](#dab-demo): This demo showcases how to use Databricks Assets Bundles with sdp-meta
 
 
 # DAIS 2023 DEMO
@@ -27,22 +27,22 @@ This Demo launches Bronze and Silver pipelines with following activities:
    pip install delta-spark==3.0.0 pyspark==3.5.5
    ```
 
-4. Clone dlt-meta:
+4. Clone sdp-meta:
     ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git
+    git clone https://github.com/databrickslabs/sdp-meta.git
     ```
 
 5. ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
 
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. ```commandline
@@ -54,7 +54,7 @@ This Demo launches Bronze and Silver pipelines with following activities:
     ![dais_demo.png](../docs/static/images/dais_demo.png)
 
 # Databricks Tech Summit FY2024 DEMO:
-This demo will launch auto generated tables(100s) inside single bronze and silver pipeline using dlt-meta.
+This demo will launch auto generated tables(100s) inside single bronze and silver pipeline using sdp-meta.
 
 1. Launch Command Prompt
 
@@ -67,20 +67,20 @@ This demo will launch auto generated tables(100s) inside single bronze and silve
    ```
 
 4. ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git
+    git clone https://github.com/databrickslabs/sdp-meta.git
     ```
 
 5. ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
 
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. ```commandline
@@ -109,20 +109,20 @@ This demo will perform following tasks:
    ```
 
 4. ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git
+    git clone https://github.com/databrickslabs/sdp-meta.git
     ```
 
 5. ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
 
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 7. ```commandline
@@ -148,29 +148,29 @@ This demo will perform following tasks:
    ```
 
 4. ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git
+    git clone https://github.com/databrickslabs/sdp-meta.git
     ```
 
 5. ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 6. Eventhub
 - Needs eventhub instance running
 - Need two eventhub topics first for main feed (eventhub_name) and second for append flow feed (eventhub_name_append_flow)
 - Create databricks secrets scope for eventhub keys
     - ```
-            commandline databricks secrets create-scope eventhubs_dltmeta_creds
+            commandline databricks secrets create-scope eventhubs_sdp_meta_creds
         ```
     - ```commandline
             databricks secrets put-secret --json '{
-                "scope": "eventhubs_dltmeta_creds",
+                "scope": "eventhubs_sdp_meta_creds",
                 "key": "RootManageSharedAccessKey",
                 "string_value": "<<value>>"
                 }'
@@ -178,17 +178,17 @@ This demo will perform following tasks:
 - Create databricks secrets to store producer and consumer keys using the scope created in step 2
 
 - Following are the mandatory arguments for running EventHubs demo
-    - uc_catalog_name : unity catalog name e.g. ravi_dlt_meta_uc
-    - eventhub_namespace: Eventhub namespace e.g. dltmeta
-    - eventhub_name : Primary Eventhubname e.g. dltmeta_demo
-    - eventhub_name_append_flow: Secondary eventhub name for appendflow feed e.g. dltmeta_demo_af
+    - uc_catalog_name : unity catalog name e.g. ravi_sdp_meta_uc
+    - eventhub_namespace: Eventhub namespace e.g. sdp_meta
+    - eventhub_name : Primary Eventhubname e.g. sdp_meta_demo
+    - eventhub_name_append_flow: Secondary eventhub name for appendflow feed e.g. sdp_meta_demo_af
     - eventhub_producer_accesskey_name: Producer databricks access keyname e.g. RootManageSharedAccessKey
     - eventhub_consumer_accesskey_name: Consumer databricks access keyname e.g. RootManageSharedAccessKey
-    - eventhub_secrets_scope_name: Databricks secret scope name e.g. eventhubs_dltmeta_creds
+    - eventhub_secrets_scope_name: Databricks secret scope name e.g. eventhubs_sdp_meta_creds
     - eventhub_port: Eventhub port
 
 7. ```commandline
-    python3 demo/launch_af_eventhub_demo.py --uc_catalog_name=<<uc catalog name>> --eventhub_name=dltmeta_demo --eventhub_name_append_flow=dltmeta_demo_af --eventhub_secrets_scope_name=dltmeta_eventhub_creds --eventhub_namespace=dltmeta --eventhub_port=9093 --eventhub_producer_accesskey_name=RootManageSharedAccessKey --eventhub_consumer_accesskey_name=RootManageSharedAccessKey --eventhub_accesskey_secret_name=RootManageSharedAccessKey --profile=<<DEFAULT>>
+    python3 demo/launch_af_eventhub_demo.py --uc_catalog_name=<<uc catalog name>> --eventhub_name=sdp_meta_demo --eventhub_name_append_flow=sdp_meta_demo_af --eventhub_secrets_scope_name=sdp_meta_eventhub_creds --eventhub_namespace=sdp_meta --eventhub_port=9093 --eventhub_producer_accesskey_name=RootManageSharedAccessKey --eventhub_consumer_accesskey_name=RootManageSharedAccessKey --eventhub_accesskey_secret_name=RootManageSharedAccessKey --profile=<<DEFAULT>>
     ```
 
   ![af_eh_demo.png](../docs/static/images/af_eh_demo.png)
@@ -213,18 +213,18 @@ This demo will perform following tasks:
    ```
 
 4. ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git
+    git clone https://github.com/databrickslabs/sdp-meta.git
     ```
 
 5. ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 6. Run the command 
@@ -279,18 +279,18 @@ This demo will perform following tasks:
    ```
 
 4. ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git 
+    git clone https://github.com/databrickslabs/sdp-meta.git 
     ```
 
 5. ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdp_meta_home
 
 6. Run the command 
     ```commandline
@@ -320,18 +320,18 @@ This demo will perform following tasks:
    ```
 
 4. ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git 
+    git clone https://github.com/databrickslabs/sdp-meta.git 
     ```
 
 5. ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 6. Optional: if you are using secrets for kafka. Create databricks secrets scope for source and sink kafka using below command
@@ -358,9 +358,9 @@ This demo will perform following tasks:
 # DAB Demo
 
 ## Overview
-This demo showcases how to use Databricks Asset Bundles (DABs) with DLT-Meta:
+This demo showcases how to use Databricks Asset Bundles (DABs) with SDP-Meta:
 This demo will perform following steps:
-- Create dlt-meta schema's for dataflowspec and bronze/silver layer
+- Create sdp-meta schema's for dataflowspec and bronze/silver layer
 - Upload nccessary resources to unity catalog volume
 - Create DAB files with catalog, schema, file locations populated
 - Deploy DAB to databricks workspace
@@ -384,24 +384,24 @@ This demo will perform following steps:
    ```
 
 4. ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git 
+    git clone https://github.com/databrickslabs/sdp-meta.git 
     ```
 
 5. ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 6. Set python environment variable into terminal
     ```commandline
-    dlt_meta_home=$(pwd)
+    sdp_meta_home=$(pwd)
     ```
     ```commandline
-    export PYTHONPATH=$dlt_meta_home
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 6. Generate DAB resources and set up schemas:
     This command will:
     - Generate DAB configuration files
-    - Create DLT-Meta schemas
+    - Create SDP-Meta schemas
     - Upload necessary files to volumes
     ```commandline
         python demo/generate_dabs_resources.py --source=cloudfiles --uc_catalog_name=<your_catalog_name> --profile=<your_profile>

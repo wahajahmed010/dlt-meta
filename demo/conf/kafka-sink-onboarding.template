@@ -44,7 +44,7 @@
                     "name": "bronze_customer_delta_sink",
                     "format": "delta",
                     "options": {
-                        "path":"dbfs:/mnt/dltmeta_sink/iot"
+                        "path":"/Volumes/{uc_catalog_name}/{bronze_schema}/sdp_meta_volume/data/sink/iot"
                     },
                     "select_exp":["value"],
                     "where_clause":"value is not null"                    

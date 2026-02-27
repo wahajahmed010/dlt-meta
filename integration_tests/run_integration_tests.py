@@ -21,7 +21,7 @@ from databricks.sdk.service.catalog import SchemasAPI, VolumeInfo, VolumeType
 from databricks.sdk.service.pipelines import NotebookLibrary, PipelineLibrary
 from databricks.sdk.service.workspace import ImportFormat, Language
 
-from src.install import WorkspaceInstaller
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 
 # Dictionary mapping cloud providers to node types
 cloud_node_type_id_dict = {
@@ -32,7 +32,7 @@ cloud_node_type_id_dict = {
 
 
 @dataclass
-class DLTMetaRunnerConf:
+class SDPMetaRunnerConf:
     """
     A class to hold information required for running integration tests.
 
@@ -48,8 +48,8 @@ class DLTMetaRunnerConf:
         The path to the onboarding file to use for the test run.
     int_tests_dir : str, optional
         The directory containing the integration tests.
-    dlt_meta_schema : str, optional
-        The name of the DLT meta schema to use for the test run.
+    sdp_meta_schema : str, optional
+        The name of the SDP meta schema to use for the test run.
     bronze_schema : str, optional
         The name of the bronze schema to use for the test run.
     silver_schema : str, optional
@@ -96,7 +96,7 @@ class DLTMetaRunnerConf:
     # onboarding_fanout_file_path: str = "integration_tests/conf/onboarding.json"
     # onboarding_fanout_templates: str = None
     int_tests_dir: str = "integration_tests"
-    dlt_meta_schema: str = None
+    sdp_meta_schema: str = None
     bronze_schema: str = None
     silver_schema: str = None
     runners_nb_path: str = None
@@ -152,7 +152,7 @@ class DLTMetaRunnerConf:
     snapshot_template: str = "integration_tests/conf/snapshot-onboarding.template"
 
 
-class DLTMETARunner:
+class SDPMETARunner:
     """
     A class to run integration tests for DLT-Meta.
 
@@ -168,16 +168,16 @@ class DLTMETARunner:
         self.wsi = WorkspaceInstaller(ws)
         self.base_dir = base_dir
 
-    def init_runner_conf(self) -> DLTMetaRunnerConf:
+    def init_runner_conf(self) -> SDPMetaRunnerConf:
         """Initialize the runner configuration for running integration tests."""
         run_id = uuid.uuid4().hex
-        runner_conf = DLTMetaRunnerConf(
+        runner_conf = SDPMetaRunnerConf(
             run_id=run_id,
             username=self.wsi._my_username,
             uc_catalog_name=self.args["uc_catalog_name"],
-            dlt_meta_schema=f"dlt_meta_dataflowspecs_it_{run_id}",
+            sdp_meta_schema=f"sdp_meta_dataflowspecs_it_{run_id}",
             bronze_schema=f"dlt_meta_bronze_it_{run_id}",
-            silver_schema=f"dlt_meta_silver_it_{run_id}",
+            silver_schema=f"sdp_meta_silver_it_{run_id}",
             runners_nb_path=f"/Users/{self.wsi._my_username}/dlt_meta_int_tests/{run_id}",
             source=self.args["source"] if "source" in self.args else None,
             # node_type_id=cloud_node_type_id_dict[self.args["cloud_provider_name"]],
@@ -244,20 +244,20 @@ class DLTMETARunner:
         return runner_conf
 
     def _install_folder(self):
-        return f"/Users/{self.wsi._my_username}/dlt-meta"
+        return f"/Users/{self.wsi._my_username}/sdp-meta"
 
     def _my_username(self, ws):
         if not hasattr(ws, "_me"):
             ws._me = ws.current_user.me()
         return ws._me.user_name
 
-    def create_dlt_meta_pipeline(
+    def create_sdp_meta_pipeline(
         self,
         pipeline_name: str,
         layer: str,
         group: str,
         target_schema: str,
-        runner_conf: DLTMetaRunnerConf,
+        runner_conf: SDPMetaRunnerConf,
     ) -> str:
         """
         Create a DLT pipeline.
@@ -267,7 +267,7 @@ class DLTMETARunner:
         pipeline_name : str = The name of the pipeline.
         layer : str = The layer of the pipeline.
         target_schema : str = The target schema of the pipeline.
-        runner_conf : DLTMetaRunnerConf = The runner configuration.
+        runner_conf : SDPMetaRunnerConf = The runner configuration.
 
         Returns:
         -------
@@ -280,13 +280,13 @@ class DLTMETARunner:
         configuration = {
             "layer": layer,
             f"{layer}.group": group,
-            "dlt_meta_whl": runner_conf.remote_whl_path,
+            "sdp_meta_whl": runner_conf.remote_whl_path,
             "pipelines.externalSink.enabled": "true",
         }
         created = None
 
         configuration[f"{layer}.dataflowspecTable"] = (
-            f"{runner_conf.uc_catalog_name}.{runner_conf.dlt_meta_schema}.{layer}_dataflowspec_cdc"
+            f"{runner_conf.uc_catalog_name}.{runner_conf.sdp_meta_schema}.{layer}_dataflowspec_cdc"
         )
         created = self.ws.pipelines.create(
             catalog=runner_conf.uc_catalog_name,
@@ -296,7 +296,7 @@ class DLTMETARunner:
             libraries=[
                 PipelineLibrary(
                     notebook=NotebookLibrary(
-                        path=f"{runner_conf.runners_nb_path}/runners/init_dlt_meta_pipeline.py"
+                        path=f"{runner_conf.runners_nb_path}/runners/init_sdp_meta_pipeline.py"
                     )
                 )
             ],
@@ -307,9 +307,9 @@ class DLTMETARunner:
             raise Exception("Pipeline creation failed")
         return created.pipeline_id
 
-    def create_workflow_spec(self, runner_conf: DLTMetaRunnerConf):
+    def create_workflow_spec(self, runner_conf: SDPMetaRunnerConf):
         """Create the Databricks Workflow Job given the DLT Meta configuration specs"""
-        dltmeta_environments = [
+        sdp_meta_environments = [
             jobs.JobEnvironment(
                 environment_key="dl_meta_int_env",
                 spec=compute.Environment(
@@ -320,12 +320,12 @@ class DLTMETARunner:
         ]
         tasks = [
             jobs.Task(
-                task_key="setup_dlt_meta_pipeline_spec",
+                task_key="setup_sdp_meta_pipeline_spec",
                 environment_key="dl_meta_int_env",
                 description="test",
                 timeout_seconds=0,
                 python_wheel_task=jobs.PythonWheelTask(
-                    package_name="dlt_meta",
+                    package_name="databricks_labs_sdp_meta",
                     entry_point="run",
                     named_parameters={
                         "onboard_layer": (
@@ -333,7 +333,7 @@ class DLTMETARunner:
                             if runner_conf.source in ["cloudfiles", "snapshot"]
                             else "bronze"
                         ),
-                        "database": f"{runner_conf.uc_catalog_name}.{runner_conf.dlt_meta_schema}",
+                        "database": f"{runner_conf.uc_catalog_name}.{runner_conf.sdp_meta_schema}",
                         "onboarding_file_path": f"{runner_conf.uc_volume_path}/{self.base_dir}/conf/onboarding.json",
                         "silver_dataflowspec_table": "silver_dataflowspec_cdc",
                         "silver_dataflowspec_path": f"{runner_conf.uc_volume_path}/data/dlt_spec/silver",
@@ -352,7 +352,7 @@ class DLTMETARunner:
                 depends_on=[
                     jobs.TaskDependency(
                         task_key=(
-                            "setup_dlt_meta_pipeline_spec"
+                            "setup_sdp_meta_pipeline_spec"
                             if runner_conf.source == "cloudfiles" or runner_conf.source == "snapshot"
                             else "publish_events"
                         )
@@ -402,11 +402,11 @@ class DLTMETARunner:
                         environment_key="dl_meta_int_env",
                         timeout_seconds=0,
                         python_wheel_task=jobs.PythonWheelTask(
-                            package_name="dlt_meta",
+                            package_name="databricks_labs_sdp_meta",
                             entry_point="run",
                             named_parameters={
                                 "onboard_layer": "bronze",
-                                "database": f"{runner_conf.uc_catalog_name}.{runner_conf.dlt_meta_schema}",
+                                "database": f"{runner_conf.uc_catalog_name}.{runner_conf.sdp_meta_schema}",
                                 "onboarding_file_path": f"{runner_conf.uc_volume_path}/{self.base_dir}/conf/onboarding_A2.json",  # noqa : E501
                                 "bronze_dataflowspec_table": "bronze_dataflowspec_cdc",
                                 "import_author": "Ravi",
@@ -442,7 +442,7 @@ class DLTMETARunner:
                 ),
                 "version": "1",
                 "source_catalog": runner_conf.uc_catalog_name,
-                "source_database": runner_conf.dlt_meta_schema,
+                "source_database": runner_conf.sdp_meta_schema,
                 "source_table": "source_products_delta"
             }
             base_parameters_v2 = {
@@ -451,7 +451,7 @@ class DLTMETARunner:
                 ),
                 "version": "2",
                 "source_catalog": runner_conf.uc_catalog_name,
-                "source_database": runner_conf.dlt_meta_schema,
+                "source_database": runner_conf.sdp_meta_schema,
                 "source_table": "source_products_delta"
             }
             base_parameters_v3 = {
@@ -460,7 +460,7 @@ class DLTMETARunner:
                 ),
                 "version": "3",
                 "source_catalog": runner_conf.uc_catalog_name,
-                "source_database": runner_conf.dlt_meta_schema,
+                "source_database": runner_conf.sdp_meta_schema,
                 "source_table": "source_stores_delta"
             }
             tasks[1].depends_on = [jobs.TaskDependency(task_key='create_source_tables')]
@@ -469,7 +469,7 @@ class DLTMETARunner:
                     jobs.Task(
                         task_key="create_source_tables",
                         depends_on=[
-                            jobs.TaskDependency(task_key="setup_dlt_meta_pipeline_spec")
+                            jobs.TaskDependency(task_key="setup_sdp_meta_pipeline_spec")
                         ],
                         notebook_task=jobs.NotebookTask(
                             notebook_path=f"{runner_conf.runners_nb_path}/runners/upload_snapshots.py",
@@ -564,7 +564,7 @@ class DLTMETARunner:
                     task_key="publish_events",
                     description="test",
                     depends_on=[
-                        jobs.TaskDependency(task_key="setup_dlt_meta_pipeline_spec")
+                        jobs.TaskDependency(task_key="setup_sdp_meta_pipeline_spec")
                     ],
                     notebook_task=jobs.NotebookTask(
                         notebook_path=f"{runner_conf.runners_nb_path}/runners/publish_events.py",
@@ -574,8 +574,8 @@ class DLTMETARunner:
             )
 
         return self.ws.jobs.create(
-            name=f"dlt-meta-{runner_conf.run_id}",
-            environments=dltmeta_environments,
+            name=f"sdp-meta-{runner_conf.run_id}",
+            environments=sdp_meta_environments,
             tasks=tasks,
         )
 
@@ -591,7 +591,7 @@ class DLTMETARunner:
         """Create UC schemas and volumes needed to run the integration tests"""
         SchemasAPI(self.ws.api_client).create(
             catalog_name=runner_conf.uc_catalog_name,
-            name=runner_conf.dlt_meta_schema,
+            name=runner_conf.sdp_meta_schema,
             comment="dlt_meta framework schema",
         )
         SchemasAPI(self.ws.api_client).create(
@@ -607,7 +607,7 @@ class DLTMETARunner:
             )
         volume_info = self.ws.volumes.create(
             catalog_name=runner_conf.uc_catalog_name,
-            schema_name=runner_conf.dlt_meta_schema,
+            schema_name=runner_conf.sdp_meta_schema,
             name=runner_conf.uc_volume_name,
             volume_type=VolumeType.MANAGED,
         )
@@ -617,7 +617,7 @@ class DLTMETARunner:
             f"{runner_conf.volume_info.schema_name}/{runner_conf.volume_info.name}/"
         )
 
-    def generate_onboarding_file(self, runner_conf: DLTMetaRunnerConf):
+    def generate_onboarding_file(self, runner_conf: SDPMetaRunnerConf):
         """Generate onboarding file from templates."""
 
         string_subs = {
@@ -629,7 +629,7 @@ class DLTMETARunner:
         if runner_conf.source in ["cloudfiles", "snapshot"]:
             string_subs.update({
                 "{silver_schema}": runner_conf.silver_schema,
-                "{source_database}": runner_conf.dlt_meta_schema
+                "{source_database}": runner_conf.sdp_meta_schema
             })
         elif runner_conf.source == "eventhub":
             string_subs.update(
@@ -703,7 +703,7 @@ class DLTMETARunner:
             with open(runner_conf.onboarding_fanout_file_path, "w") as onboarding_file:
                 json.dump(json.loads(onboard_json), onboarding_file, indent=4)
 
-    def upload_files_to_databricks(self, runner_conf: DLTMetaRunnerConf):
+    def upload_files_to_databricks(self, runner_conf: SDPMetaRunnerConf):
         """
         Upload all necessary data, configuration files, wheels, and notebooks to run the
         integration tests
@@ -755,7 +755,7 @@ class DLTMETARunner:
         )
         print(f"Python wheel upload to {runner_conf.remote_whl_path} completed!!!")
 
-    def init_dltmeta_runner_conf(self, runner_conf: DLTMetaRunnerConf):
+    def init_sdp_meta_runner_conf(self, runner_conf: SDPMetaRunnerConf):
         """Create testing metadata including schemas, volumes, and uploading necessary notebooks"""
 
         # Generate uc schemas, volumes and upload onboarding files
@@ -763,9 +763,9 @@ class DLTMETARunner:
         self.generate_onboarding_file(runner_conf)
         self.upload_files_to_databricks(runner_conf)
 
-    def create_bronze_silver_dlt(self, runner_conf: DLTMetaRunnerConf):
-        runner_conf.bronze_pipeline_id = self.create_dlt_meta_pipeline(
-            f"dlt-meta-bronze-{runner_conf.run_id}",
+    def create_bronze_silver_dlt(self, runner_conf: SDPMetaRunnerConf):
+        runner_conf.bronze_pipeline_id = self.create_sdp_meta_pipeline(
+            f"sdp-meta-bronze-{runner_conf.run_id}",
             "bronze",
             "A1",
             runner_conf.bronze_schema,
@@ -773,8 +773,8 @@ class DLTMETARunner:
         )
 
         if runner_conf.source == "cloudfiles":
-            runner_conf.bronze_pipeline_A2_id = self.create_dlt_meta_pipeline(
-                f"dlt-meta-bronze-A2-{runner_conf.run_id}",
+            runner_conf.bronze_pipeline_A2_id = self.create_sdp_meta_pipeline(
+                f"sdp-meta-bronze-A2-{runner_conf.run_id}",
                 "bronze",
                 "A2",
                 runner_conf.bronze_schema,
@@ -782,15 +782,15 @@ class DLTMETARunner:
             )
 
         if runner_conf.source in ["cloudfiles", "snapshot"]:
-            runner_conf.silver_pipeline_id = self.create_dlt_meta_pipeline(
-                f"dlt-meta-silver-{runner_conf.run_id}",
+            runner_conf.silver_pipeline_id = self.create_sdp_meta_pipeline(
+                f"sdp-meta-silver-{runner_conf.run_id}",
                 "silver",
                 "A1",
                 runner_conf.silver_schema,
                 runner_conf,
             )
 
-    def launch_workflow(self, runner_conf: DLTMetaRunnerConf):
+    def launch_workflow(self, runner_conf: SDPMetaRunnerConf):
 
         created_job = self.create_workflow_spec(runner_conf)
 
@@ -804,7 +804,7 @@ class DLTMETARunner:
         print(f"Job run finished. run_id={run_by_id}")
         return created_job
 
-    def download_test_results(self, runner_conf: DLTMetaRunnerConf):
+    def download_test_results(self, runner_conf: SDPMetaRunnerConf):
         ws_output_file = self.ws.workspace.download(runner_conf.test_output_file_path)
         with open(
             f"integration_test_output_{runner_conf.run_id}.csv", "wb"
@@ -818,7 +818,7 @@ class DLTMETARunner:
         webbrowser.open(url)
         print(f"Job created successfully. job_id={created_job.job_id}, url={url}")
 
-    def clean_up(self, runner_conf: DLTMetaRunnerConf):
+    def clean_up(self, runner_conf: SDPMetaRunnerConf):
         print("Cleaning up...")
         if runner_conf.job_id:
             self.ws.jobs.delete(runner_conf.job_id)
@@ -830,7 +830,7 @@ class DLTMETARunner:
             self.ws.pipelines.delete(runner_conf.silver_pipeline_id)
         if runner_conf.uc_catalog_name:
             test_schema_list = [
-                runner_conf.dlt_meta_schema,
+                runner_conf.sdp_meta_schema,
                 runner_conf.bronze_schema,
                 runner_conf.silver_schema,
             ]
@@ -855,9 +855,9 @@ class DLTMETARunner:
                     self.ws.schemas.delete(schema.full_name)
         print("Cleaning up complete!!!")
 
-    def run(self, runner_conf: DLTMetaRunnerConf):
+    def run(self, runner_conf: SDPMetaRunnerConf):
         try:
-            self.init_dltmeta_runner_conf(runner_conf)
+            self.init_sdp_meta_runner_conf(runner_conf)
             self.create_bronze_silver_dlt(runner_conf)
             self.launch_workflow(runner_conf)
             self.download_test_results(runner_conf)
@@ -1074,7 +1074,7 @@ def main():
     """Entry method to run integration tests."""
     args = process_arguments()
     workspace_client = get_workspace_api_client(args["profile"])
-    integration_test_runner = DLTMETARunner(args, workspace_client, "integration_tests")
+    integration_test_runner = SDPMETARunner(args, workspace_client, "integration_tests")
     runner_conf = integration_test_runner.init_runner_conf()
     integration_test_runner.run(runner_conf)
 

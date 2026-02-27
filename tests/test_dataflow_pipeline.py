@@ -9,14 +9,14 @@ import os
 from pyspark.sql.functions import lit, expr
 import pyspark.sql.types as T
 from pyspark.sql import DataFrame
-from tests.utils import DLTFrameworkTestCase
+from tests.utils import SDPFrameworkTestCase
 from unittest.mock import MagicMock, patch
-from src.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
+from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
 sys.modules["dlt"] = MagicMock()
-from src.dataflow_pipeline import DataflowPipeline  # noqa: E402
-from src.onboard_dataflowspec import OnboardDataflowspec  # noqa: E402
-from src.dataflow_spec import DataflowSpecUtils  # noqa: E402
-from src.pipeline_readers import PipelineReaders  # noqa: E402
+from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline  # noqa: E402
+from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec  # noqa: E402
+from databricks.labs.sdp_meta.dataflow_spec import DataflowSpecUtils  # noqa: E402
+from databricks.labs.sdp_meta.pipeline_readers import PipelineReaders  # noqa: E402
 
 dlt = MagicMock()
 dlt.expect_all_or_drop = MagicMock(return_value=lambda func: func)
@@ -37,7 +37,7 @@ dlt.expect_all = MagicMock(return_value=lambda func: func)
 raw_delta_table_stream = MagicMock()
 
 
-class DataflowPipelineTests(DLTFrameworkTestCase):
+class DataflowPipelineTests(SDPFrameworkTestCase):
     """Test for Dataflowpipeline."""
 
     bronze_dataflow_spec_acs_map = {
@@ -69,9 +69,9 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         "appendFlowsSchemas": {},
         "version": "v1",
         "createDate": datetime.now,
-        "createdBy": "dlt-meta-unittest",
+        "createdBy": "sdp-meta-unittest",
         "updateDate": datetime.now,
-        "updatedBy": "dlt-meta-unittest",
+        "updatedBy": "sdp-meta-unittest",
         "clusterBy": [""],
         "clusterByAuto": False,
         "sinks": []
@@ -107,9 +107,9 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         "sinks": [],
         "version": "v1",
         "createDate": datetime.now,
-        "createdBy": "dlt-meta-unittest",
+        "createdBy": "sdp-meta-unittest",
         "updateDate": datetime.now,
-        "updatedBy": "dlt-meta-unittest",
+        "updatedBy": "sdp-meta-unittest",
         "clusterBy": [""],
         "clusterByAuto": False,
     }
@@ -168,9 +168,9 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         "sinks": {},
         "version": "v1",
         "createDate": datetime.now,
-        "createdBy": "dlt-meta-unittest",
+        "createdBy": "sdp-meta-unittest",
         "updateDate": datetime.now,
-        "updatedBy": "dlt-meta-unittest",
+        "updatedBy": "sdp-meta-unittest",
         "clusterBy": [""],
         "clusterByAuto": False,
     }
@@ -215,9 +215,9 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         "sinks": {},
         "version": "v1",
         "createDate": datetime.now,
-        "createdBy": "dlt-meta-unittest",
+        "createdBy": "sdp-meta-unittest",
         "updateDate": datetime.now,
-        "updatedBy": "dlt-meta-unittest",
+        "updatedBy": "sdp-meta-unittest",
         "clusterBy": [""],
         "clusterByAuto": False,
     }
@@ -559,7 +559,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         with self.assertRaises(Exception):
             dlt_data_flow.cdc_apply_changes()
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_dlt_view_bronze_call(self, mock_dlt):
         mock_dlt.view = MagicMock(return_value=None)
         bronze_dataflow_spec = BronzeDataflowSpec(
@@ -576,7 +576,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
             comment=f"input dataset view for {pipeline.view_name}"
         )
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_dlt_view_silver_call(self, mock_dlt):
         mock_dlt.view = MagicMock(return_value=None)
         silver_dataflow_spec = SilverDataflowSpec(
@@ -593,7 +593,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
             comment=f"input dataset view for {pipeline.view_name}"
         )
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_dlt_write_bronze(self, mock_dlt):
         mock_dlt_table = MagicMock(return_value=lambda func: func)
         mock_dlt.table = mock_dlt_table
@@ -641,7 +641,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         self.assertEqual(kwargs["path"], target_path_no_uc)
         self.assertEqual(kwargs["comment"], expected_comment_no_uc)
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_dlt_write_silver(self, mock_dlt):
         mock_dlt_table = MagicMock(return_value=lambda func: func)
         mock_dlt.table = mock_dlt_table
@@ -774,7 +774,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
     def read_dataflowspec(self, database, table):
         return self.spark.read.table(f"{database}.{table}")
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_dataflowpipeline_bronze_dqe(self, mock_dlt):
         mock_dlt_table = MagicMock(return_value=lambda func: func)
         mock_expect_all = MagicMock(return_value=lambda func: func)
@@ -835,7 +835,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         assert mock_expect_all_or_drop.expect_all_or_drop(expect_or_quarantine_dict)
 
     @patch.object(DataflowPipeline, 'get_silver_schema', new_callable=MagicMock)
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     @patch.object(DataflowPipeline, "create_streaming_table", new_callable=MagicMock)
     def test_dataflowpipeline_silver_cdc_apply_changes(self,
                                                        mock_create_streaming_table,
@@ -925,7 +925,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
             cdc_apply_changes.ignore_null_updates_except_column_list
         )
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     @patch.object(DataflowPipeline, "create_streaming_table", new_callable=MagicMock)
     def test_bronze_cdc_apply_changes(self,
                                       mock_create_streaming_table,
@@ -978,7 +978,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         assert_column_equals(kwargs["apply_as_deletes"], apply_as_deletes)
         assert_column_equals(kwargs["apply_as_truncates"], apply_as_truncates)
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     @patch.object(DataflowPipeline, "create_streaming_table", new_callable=MagicMock)
     def test_bronze_cdc_apply_changes_v7(self,
                                          mock_create_streaming_table,
@@ -1054,11 +1054,11 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
 
     @patch.object(DataflowPipeline, "create_streaming_table", new_callable=MagicMock)
     @patch.object(DataflowPipeline, "write_to_delta", new_callable=MagicMock)
-    @patch('src.pipeline_writers.dlt')
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.pipeline_writers.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_bronze_append_flow_positive(self,
-                                         mock_dlt,
-                                         mock_pipeline_writers_dlt,
+                                         mock_dlt_dp,
+                                         mock_dlt_pw,
                                          mock_write_to_delta,
                                          mock_create_streaming_table,
                                          ):
@@ -1067,12 +1067,9 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         mock_dlt_create_streaming_table = MagicMock(return_value=None)
         mock_append_flow = MagicMock(return_value=lambda func: func)
         mock_read_stream = MagicMock(return_value=None)
-        mock_dlt.create_streaming_table = mock_dlt_create_streaming_table
-        mock_dlt.append_flow = mock_append_flow
-        mock_dlt.read_stream = mock_read_stream
-        # Also set up mocks for pipeline_writers.dlt
-        mock_pipeline_writers_dlt.append_flow = mock_append_flow
-        mock_pipeline_writers_dlt.read_stream = mock_read_stream
+        mock_dlt_pw.create_streaming_table = mock_dlt_create_streaming_table
+        mock_dlt_pw.append_flow = mock_append_flow
+        mock_dlt_pw.read_stream = mock_read_stream
         onboarding_params_map = copy.deepcopy(self.onboarding_bronze_silver_params_map)
         onboarding_params_map['onboarding_file_path'] = self.onboarding_append_flow_json_file
         o_dfs = OnboardDataflowspec(self.spark, onboarding_params_map)
@@ -1124,7 +1121,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         self.assertIsNone(expect_all_or_fail_dict)
         self.assertIsNone(expect_all_dict)
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_read_append_flows(self, mock_dlt):
         mock_dlt.view = MagicMock(return_value=None)
         onboarding_params_map = copy.deepcopy(self.onboarding_bronze_silver_params_map)
@@ -1206,7 +1203,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
         self.assertIsNotNone(expect_all_or_drop_dict)
         self.assertIsNotNone(expect_all_or_fail_dict)
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_modify_schema_for_cdc_changes(self, mock_dlt):
         mock_dlt_table = MagicMock()
         mock_dlt_table.table.return_value = None
@@ -1650,7 +1647,7 @@ class DataflowPipelineTests(DLTFrameworkTestCase):
             pipeline.run_dlt()
         self.assertEqual(str(context.exception), "Snapshot reader function not provided!")
 
-    @patch('src.dataflow_pipeline.dlt')
+    @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
     def test_is_create_view_with_delta_snapshot_format(self, mock_dlt):
         """Test is_create_view with delta snapshot format."""
         mock_dlt_view = MagicMock()

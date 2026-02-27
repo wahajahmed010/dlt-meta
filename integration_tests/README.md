@@ -6,14 +6,14 @@
     databricks auth login --host WORKSPACE_HOST
     ```
 
-2. Clone dlt-meta:
+2. Clone sdp-meta:
     ```commandline
-    git clone https://github.com/databrickslabs/dlt-meta.git
+    git clone https://github.com/databrickslabs/sdp-meta.git
     ```
 
 3. Navigate to project directory:
     ```commandline
-    cd dlt-meta
+    cd sdp-meta
     ```
 
 4. Create Python virtual environment:
@@ -40,20 +40,20 @@
 
 7. Set environment variables:
     ```commandline
-    dlt_meta_home=$(pwd)
-    export PYTHONPATH=$dlt_meta_home
+    sdp_meta_home=$(pwd)
+    export PYTHONPATH=$sdp_meta_home
     ```
 
 9. Run integration test against cloudfile or eventhub or kafka using below options. To use the Databricks profile configured using CLI then pass ```--profile <profile-name>``` to below command otherwise provide workspace url and token in command line. You will also need to provide a Unity Catalog catalog for which the schemas, tables, and files will be created in.
 
     - 9a. Run the command for  **cloudfiles**
         ```commandline
-        python integration_tests/run_integration_tests.py  --uc_catalog_name=<<uc catalog name>> --source=cloudfiles --profile=<<DEFAULT>>
+        python integration_tests/run_integration_tests.py  --source=cloudfiles --uc_catalog_name=<<uc catalog name>> --profile=<<DEFAULT>>
         ```
 
     - 9b. Run the command for **eventhub**
         ```commandline
-        python integration_tests/run_integration_tests.py --uc_catalog_name=<<uc catalog name>> --source=eventhub --eventhub_name=iot --eventhub_secrets_scope_name=eventhubs_creds --eventhub_namespace=int_test-standard --eventhub_port=9093 --eventhub_producer_accesskey_name=producer --eventhub_consumer_accesskey_name=consumer  --eventhub_name_append_flow=test_append_flow --eventhub_accesskey_secret_name=test_secret_name --profile=<<DEFAULT>>
+        python integration_tests/run_integration_tests.py --uc_catalog_name=<<uc catalog name>> --source=eventhub --dltmeta_sink1=iot --eventhub_secrets_scope_name=eventhubs_creds --eventhub_namespace=int_test-standard --eventhub_port=9093 --eventhub_producer_accesskey_name=producer --eventhub_consumer_accesskey_name=consumer  --eventhub_name_append_flow=test_append_flow --eventhub_accesskey_secret_name=test_secret_name --profile=<<DEFAULT>>
         ```
     Prerequisites for eventhub integration tests:
     1. Running eventhub instance
@@ -74,7 +74,7 @@
 
     - 9c. Run the command for **kafka**
         ```commandline
-        python integration_tests/run_integration_tests.py --uc_catalog_name=<<uc catalog name>>  --source=kafka --kafka_source_topic=dlt-meta-integration-test --kafka_sink_topic=dlt-meta_inttest_topic --kafka_source_broker=host:9092 --profile=<<DEFAULT>>
+        python integration_tests/run_integration_tests.py --uc_catalog_name=<<uc catalog name>>  --source=kafka --kafka_source_topic=sdp-meta-integration-test --kafka_sink_topic=sdp-meta_inttest_topic --kafka_source_broker=host:9092 --profile=<<DEFAULT>>
         ```
     Optional secret configuration:
     ```commandline
