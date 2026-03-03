@@ -27,10 +27,10 @@ This demo **hardcodes** the behavior per table so you don’t have to choose at 
 
 This is wired in two places so they stay in sync:
 
-1. **Launcher** (`demo/launch_lfc_demo.py`) — when it writes `onboarding.json` to the run’s volume, it sets for `intpk`: `bronze_reader_options: {"readChangeFeed": "true"}`, `bronze_cdc_apply_changes` (and no bronze DQE); for `dtix`: `bronze_reader_options: {}` and bronze DQE.
-2. **LFC notebook** (`demo/lfcdemo-database.ipynb`) — after creating the LFC pipelines, it overwrites `conf/onboarding.json` on the same volume with the correct `source_database` (the LFC-created schema) and the same per-table bronze config (intpk = readChangeFeed + bronze_cdc_apply_changes, dtix = DQE only).
+1. **Launcher** (`demo/launch_lfc_demo.py`) — when it writes `onboarding.json` to the run’s volume, it sets for `intpk`: `bronze_reader_options: {"readChangeFeed": "true"}`, `bronze_cdc_apply_changes`, and bronze + silver DQE (pipeline uses DQE-then-CDC); for `dtix`: `bronze_reader_options: {}` and bronze DQE only.
+2. **LFC notebook** (`demo/lfcdemo-database.ipynb`) — after creating the LFC pipelines, it overwrites `conf/onboarding.json` on the same volume with the correct `source_database` (the LFC-created schema) and the same per-table config (intpk = readChangeFeed + bronze_cdc_apply_changes + DQE, dtix = DQE only).
 
-**Why CDC (insert/update/delete) cannot use DQE:** In DLT-Meta, each table’s write path is either **CDC apply** or **data quality expectations (DQE)**, not both. The pipeline chooses one path: if `dataQualityExpectations` is set, it uses the DQE path and never runs `cdc_apply_changes`. So for flows that must handle insert/update/delete (e.g. `intpk`), we set `bronze_cdc_apply_changes` and `silver_cdc_apply_changes` and **omit** `bronze_data_quality_expectations_json_prod` and `silver_data_quality_expectations_json_prod` for that table. Append-only flows (e.g. `dtix`) can use DQE.
+**CDC and DQE together:** When both `dataQualityExpectations` and `cdcApplyChanges` are set, DLT-Meta runs **DQE then CDC**: it first writes rows that pass expectations to an intermediate table `<table>_dq` (e.g. `intpk_dq`), then runs `create_auto_cdc_flow` from that table to the final target. So CDC flows (e.g. `intpk`) can have DQE; the demo sets both bronze/silver DQE and CDC for `intpk`. Append-only flows (e.g. `dtix`) use only DQE.
 
 You do **not** pass SCD type on the command line; the demo uses this table-based setup by default. To **skip** changes instead of processing them (e.g. `skipChangeCommits: true` for intpk), change the onboarding config and remove `bronze_cdc_apply_changes` for that flow.
 

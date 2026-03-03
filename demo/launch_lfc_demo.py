@@ -289,17 +289,20 @@ class DLTMETALFCDemo(DLTMETARunner):
                 "silver_transformation_json_prod": (
                     f"{vol}/conf/silver_transformations.json"
                 ),
+                "silver_data_quality_expectations_json_prod": (
+                    f"{vol}/conf/dqe/silver_dqe.json"
+                ),
             }
             if tbl == "intpk":
                 entry["bronze_cdc_apply_changes"] = LFC_INTPK_BRONZE_CDC_APPLY_CHANGES
-                entry["silver_cdc_apply_changes"] = LFC_INTPK_SILVER_CDC_APPLY_CHANGES
-                # Omit bronze/silver DQE so pipeline uses cdc_apply_changes path
-            else:
                 entry["bronze_data_quality_expectations_json_prod"] = (
                     f"{vol}/conf/dqe/bronze_dqe.json"
                 )
-                entry["silver_data_quality_expectations_json_prod"] = (
-                    f"{vol}/conf/dqe/silver_dqe.json"
+                entry["silver_cdc_apply_changes"] = LFC_INTPK_SILVER_CDC_APPLY_CHANGES
+                # silver DQE already set above; pipeline uses DQE-then-CDC path for intpk
+            else:
+                entry["bronze_data_quality_expectations_json_prod"] = (
+                    f"{vol}/conf/dqe/bronze_dqe.json"
                 )
             onboarding.append(entry)
 
