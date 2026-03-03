@@ -288,6 +288,7 @@ class SDPMETARunner:
         configuration[f"{layer}.dataflowspecTable"] = (
             f"{runner_conf.uc_catalog_name}.{runner_conf.sdp_meta_schema}.{layer}_dataflowspec_cdc"
         )
+        # PipelinesAPI.create: use 'target' for default schema (SDK dropped 'schema' parameter)
         created = self.ws.pipelines.create(
             catalog=runner_conf.uc_catalog_name,
             name=pipeline_name,
@@ -300,7 +301,7 @@ class SDPMETARunner:
                     )
                 )
             ],
-            schema=target_schema,
+            target=target_schema,
         )
 
         if created is None:
@@ -709,7 +710,12 @@ class SDPMETARunner:
         integration tests
         """
         uc_vol_full_path = f"{runner_conf.uc_volume_path}{runner_conf.int_tests_dir}"
-        print(f"Integration test file upload to {uc_vol_full_path} starting...")
+        vol_url = (
+            f"{self.ws.config.host}/explore/data/volumes/"
+            f"{runner_conf.uc_catalog_name}/{runner_conf.dlt_meta_schema}/{runner_conf.uc_volume_name}"
+            f"?o={self.ws.get_workspace_id()}"
+        )
+        print(f"Integration test file upload to {uc_vol_full_path} starting... {vol_url}")
         # Upload the entire resources directory containing ddl and test data
         for root, dirs, files in os.walk(f"{runner_conf.int_tests_dir}/resources"):
             for file in files:
@@ -731,7 +737,7 @@ class SDPMETARunner:
                             contents=content,
                             overwrite=True,
                         )
-        print(f"Integration test file upload to {uc_vol_full_path} complete!!!")
+        print(f"Integration test file upload to {uc_vol_full_path} complete!!! {vol_url}")
 
         # Upload required notebooks for the given source
         print(f"Notebooks upload to {runner_conf.runners_nb_path} started...")
@@ -891,9 +897,10 @@ def process_arguments() -> dict[str:str]:
         ],
         [
             "uc_catalog_name",
-            "Provide databricks uc_catalog name, this is required to create volume, schema, table",
+            "Provide databricks uc_catalog name, this is required to create volume, schema, table. "
+            "Optional when --run_id is provided (incremental mode) — derived from the existing job.",
             str,
-            True,
+            False,
             [],
         ],
         [
@@ -903,6 +910,28 @@ def process_arguments() -> dict[str:str]:
             False,
             ["cloudfiles", "eventhub", "kafka", "snapshot"],
         ],
+        # Techsummit demo: data generation control
+        ["table_count", "Number of tables to generate (techsummit, default 100)", str, False, []],
+        ["table_column_count", "Columns per table (techsummit, default 5)", str, False, []],
+        ["table_data_rows_count", "Rows per table (techsummit, default 10)", str, False, []],
+        ["run_id", "Existing run_id to resume; presence implies incremental mode (techsummit/lfc)", str, False, []],
+        # Lakeflow Connect demo arguments
+        ["uc_schema_name", "Schema where LFC creates streaming tables (lfc demo, default: lfcddemo)", str, False, []],
+        [
+            "connection_name",
+            "Databricks connection name for the source database (lfc demo)",
+            str,
+            False,
+            ["lfcddemo-azure-sqlserver", "lfcddemo-azure-mysql", "lfcddemo-azure-pg"],
+        ],
+        [
+            "cdc_qbc",
+            "LFC pipeline mode: cdc, qbc, or cdc_single_pipeline (lfc demo, default: cdc)",
+            str.lower,
+            False,
+            ["cdc", "qbc", "cdc_single_pipeline"],
+        ],
+        ["trigger_interval_min", "LFC trigger interval in minutes — positive integer (lfc demo, default: 5)", str, False, []],
         # Eventhub arguments
         ["eventhub_name", "Provide eventhub_name e.g: iot", str.lower, False, []],
         [
@@ -1031,6 +1060,10 @@ def process_arguments() -> dict[str:str]:
         for mand_arg in mandatory_args:
             if args[mand_arg] is None:
                 raise Exception(f"Please provide '--{mand_arg}'")
+
+    # uc_catalog_name is required for new (setup) runs; optional when resuming via --run_id
+    if not args.get("run_id") and not args.get("uc_catalog_name"):
+        raise Exception("Please provide '--uc_catalog_name' (required unless --run_id is supplied)")
 
     # Check for arguments that are required depending on the selected source
     if args["source"] == "eventhub":
