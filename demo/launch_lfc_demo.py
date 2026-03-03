@@ -47,6 +47,12 @@ LFC_INTPK_BRONZE_CDC_APPLY_CHANGES = {
     "apply_as_deletes": "_change_type = 'delete'",
     "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"],
 }
+# Silver merge by pk so intpk silver accepts insert/update/delete (one row per pk)
+LFC_INTPK_SILVER_CDC_APPLY_CHANGES = {
+    "keys": ["pk"],
+    "sequence_by": "dt",
+    "scd_type": "1",
+}
 LFC_DEFAULT_SCHEMA = "lfcddemo"
 # Cap jobs.list() to avoid slow full-workspace iteration (API returns 25 per page)
 JOBS_LIST_LIMIT = 100
@@ -283,16 +289,17 @@ class DLTMETALFCDemo(DLTMETARunner):
                 "silver_transformation_json_prod": (
                     f"{vol}/conf/silver_transformations.json"
                 ),
-                "silver_data_quality_expectations_json_prod": (
-                    f"{vol}/conf/dqe/silver_dqe.json"
-                ),
             }
             if tbl == "intpk":
                 entry["bronze_cdc_apply_changes"] = LFC_INTPK_BRONZE_CDC_APPLY_CHANGES
-                # Omit bronze_data_quality_expectations so pipeline uses cdc_apply_changes path
+                entry["silver_cdc_apply_changes"] = LFC_INTPK_SILVER_CDC_APPLY_CHANGES
+                # Omit bronze/silver DQE so pipeline uses cdc_apply_changes path
             else:
                 entry["bronze_data_quality_expectations_json_prod"] = (
                     f"{vol}/conf/dqe/bronze_dqe.json"
+                )
+                entry["silver_data_quality_expectations_json_prod"] = (
+                    f"{vol}/conf/dqe/silver_dqe.json"
                 )
             onboarding.append(entry)
 
