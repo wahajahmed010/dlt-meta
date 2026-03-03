@@ -25,6 +25,10 @@ This demo **hardcodes** the behavior per table so you don’t have to choose at 
 - **intpk** is treated as **SCD Type 1**: the source may have updates and deletes. The demo **processes** them by reading the Delta change data feed (`readChangeFeed: true`) and applying CDC with `bronze_cdc_apply_changes` (keys, `sequence_by`, `apply_as_deletes`, etc.), so bronze reflects inserts, updates, and deletes. The LFC-created streaming table for `intpk` must have change data feed enabled **at creation**; you cannot enable it later via `ALTER TABLE` or `ALTER STREAMING TABLE` (see limitation below).
 - **dtix** is treated as **SCD Type 2** (append-only): no updates/deletes in the source, so no change feed or CDC apply is needed.
 
+**CDC: keys and sequence_by.** For CDC (insert/update/delete), `keys` (e.g. `pk`) is required to identify the row. **`sequence_by` cannot be blank** when using CDC — it is required so the merge knows which version of a row is latest. **`sequence_by` cannot be the same as the key** (e.g. not `pk` for both): it must be a column or CDF field that orders different versions of the same row (e.g. `_commit_version` or a timestamp). Even for the Lakeflow Connect SCD Type 1 special case, the primary key alone does not provide that ordering. Since **intpk** is coming from Lakeflow Connect, which performs the merge itself, a source date/time column is not required for **bronze**: the demo uses Delta CDF’s `_commit_version` as `sequence_by`. For **silver**, the demo uses the table column `dt` as `sequence_by`.
+
+**Databricks DLT behavior:** The [AUTO CDC docs](https://docs.databricks.com/en/delta-live-tables/cdc) do not state that `keys` and `sequence_by` must differ; DLT may accept the same column for both but merge semantics would be undefined. **`sequence_by`** must be a **sortable data type** (e.g. numeric, timestamp); **NULL** values in the sequence column are **unsupported**. For SCD type 2, `__START_AT` and `__END_AT` must have the same data type as the `sequence_by` field(s). **Both can be multiple columns:** `keys` is a list (e.g. `["userId", "orderId"]`); `sequence_by` can be multiple columns via a `struct` (e.g. `struct("timestamp_col", "id_col")`), ordered by the first field then the next for tie-breaking. In DLT-Meta onboarding, use a comma-separated string for `sequence_by` (e.g. `"ts,id"`); the pipeline converts it to a struct.
+
 This is wired in two places so they stay in sync:
 
 1. **Launcher** (`demo/launch_lfc_demo.py`) — when it writes `onboarding.json` to the run’s volume, it sets for `intpk`: `bronze_reader_options: {"readChangeFeed": "true"}`, `bronze_cdc_apply_changes`, and bronze + silver DQE (pipeline uses DQE-then-CDC); for `dtix`: `bronze_reader_options: {}` and bronze DQE only.
@@ -107,6 +111,11 @@ python demo/launch_lfc_demo.py \
   --profile=DEFAULT
 ```
 
+To use the **primary key** as the CDC silver `sequence_by` (instead of the `dt` column), add `--sequence_by_pk`:
+```commandline
+python demo/launch_lfc_demo.py ... --sequence_by_pk
+```
+
 Normally you do **not** pass `--source_schema`; it is read from the **Databricks secret** associated with the connection specified by `connection_name`. Pass it only to override that value.
 
 **Parameters:**
@@ -118,6 +127,7 @@ Normally you do **not** pass `--source_schema`; it is read from the **Databricks
 | `source_schema` | *(Optional)* Source schema on the source database (where the `intpk` and `dtix` tables live). When omitted, read from the Databricks secret bound to the connection. | from connection's secret when omitted |
 | `cdc_qbc` | LFC pipeline mode | `cdc` \| `qbc` \| `cdc_single_pipeline` |
 | `trigger_interval_min` | LFC trigger interval in minutes (positive integer) | `5` |
+| `sequence_by_pk` | Use primary key (`pk`) for CDC silver `sequence_by`; if omitted, use `dt` column | `false` (use `dt`) |
 | `profile` | Databricks CLI profile | `DEFAULT` |
 | `run_id` | Existing `run_id` — presence implies incremental (re-trigger) mode | — |
 

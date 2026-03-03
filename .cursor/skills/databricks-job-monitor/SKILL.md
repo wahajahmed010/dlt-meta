@@ -315,6 +315,36 @@ For "can downstream (e.g. bronze) start?" require the **latest** update (first i
   - Events with `level: "ERROR"` have a `message` field (and optionally `error`) containing the failure description. Scan the events array for `level == "ERROR"` and use `message` (or `error`) for the cause.
 - **"Failed to resolve flow" / "Failed to analyze flow"** on the bronze pipeline usually means the **source** tables (`intpk`, `dtix`) are not in the schema specified in `onboarding.json`. For the LFC demo, `source_database` must be the **LFC-created schema** (from `lfcdemo-database.ipynb`), not the source DB schema (`source_schema`). See **Bronze pipeline source schema (LFC demo)** above; ensure the notebook has overwritten `conf/onboarding.json` with `source_database: d.target_schema`.
 
+### Verifying causal relationship: did a job run cause the pipeline update to be canceled?
+
+**`cause: JOB_TASK`** means the pipeline update was **started** by a job task. It does **not** by itself prove that the job run stopped or that the job’s cancellation caused the update to be canceled. To get **positive evidence** that a specific job run caused the cancel:
+
+1. **Get the pipeline update** (state, cause, creation_time):
+   ```bash
+   databricks pipelines get-update <PIPELINE_ID> <UPDATE_ID> --profile=PROFILE -o json
+   ```
+   Note `state` (e.g. `CANCELED`), `cause` (e.g. `JOB_TASK`), and `creation_time` (ms since epoch).
+
+2. **Find the job that runs this pipeline.** The Pipelines API does not return `job_run_id` in get-update. You must identify the job whose task has `pipeline_id` equal to this pipeline:
+   ```bash
+   databricks jobs get <JOB_ID> --profile=PROFILE -o json
+   ```
+   Inspect `settings.tasks[].pipeline_task.pipeline_id`. Only that job can have started this update. (Example: job 754356193445229 runs pipelines `633ca38c-...` and `f1777a92-...`; it does **not** run pipeline `809c9648-...`. Pipeline `809c9648-...` is likely an LFC ingestion/gateway pipeline — find the job/task that references it, e.g. from the notebook’s scheduler or the run’s `lfc_created.json`.)
+
+3. **Get the job run** that started the update (same run that triggered the update; you may need to correlate by start_time vs update creation_time, or from run history):
+   ```bash
+   databricks jobs get-run <RUN_ID> --profile=PROFILE -o json
+   ```
+   Note `state.result_state`, `state.life_cycle_state`, `start_time`, `end_time`.
+
+4. **Positive evidence that the job caused the cancel:**
+   - `cause` is `JOB_TASK`, **and**
+   - That job run has `result_state: CANCELED` (or `FAILED`/`TIMEDOUT` that stopped the run), **and**
+   - Job run `end_time` is set and is before or within a short time of the pipeline update’s cancel time (cancel time from `pipelines list-pipeline-events` — look for the event "Update &lt;id&gt; is CANCELED").
+   Then the job run’s termination caused the pipeline update to be canceled.
+
+5. **If the job run is still RUNNING** (`end_time: 0`) or has `result_state: SUCCESS`, then the pipeline update was **not** canceled because the job stopped. It was likely canceled by something else (e.g. user canceled the update in the pipeline UI). `cause` remains `JOB_TASK` because the update was *started* by a job task.
+
 ## Monitoring workflow
 
 1. Read the terminal file (check `/Users/robert.lee/.cursor/projects/*/terminals/*.txt`) for `job_id` and `run_id`
@@ -323,6 +353,35 @@ For "can downstream (e.g. bronze) start?" require the **latest** update (first i
 4. For pipelines, also report health and last update time
 5. If a **job** run is `FAILED`, fetch the error message: `databricks jobs get-run <RUN_ID> --profile=DEFAULT -o json | python3 -c "import json,sys; r=json.load(sys.stdin); [print(t['task_key'], t.get('state',{}).get('state_message','')) for t in r.get('tasks',[])]"`
 6. If a **pipeline update** is `FAILED`, get the failure message from **list-pipeline-events** (see "Pipeline update failure cause" above); `pipelines get-update` does not return the message text.
+
+### Trigger task: "Job X does not exist" (InvalidParameterValue)
+
+When running **incremental** (`launch_lfc_demo.py --run_id=...`), the first task runs `trigger_ingestion_and_wait` (or the equivalent notebook). That task reads **`conf/lfc_created.json`** from the run’s UC volume to get `lfc_scheduler_job_id` and calls `jobs.run_now(job_id=lfc_scheduler_job_id)`. If you see **`InvalidParameterValue: Job 893133786814806 does not exist`** (or similar), the cause is:
+
+- **Stale `lfc_scheduler_job_id`:** The LFC scheduler job was created at setup and its ID was written to `lfc_created.json`. That job is often **deleted** by the notebook’s auto-cleanup (e.g. after 1 hour) or manually. The volume file is not updated when the job is deleted, so a later incremental run still has the old ID and `run_now` fails.
+
+**Verify:**
+
+1. **Confirm the job is missing:** `databricks jobs get <JOB_ID> --profile=PROFILE` → if you get "does not exist" or 404, the job was deleted.
+2. **Confirm what’s on the volume:** The trigger task reads  
+   `/Volumes/<catalog>/dlt_meta_dataflowspecs_lfc_<run_id>/<catalog>_lfc_volume_<run_id>/conf/lfc_created.json`.  
+   It should contain `ig_pipeline_id` and `lfc_scheduler_job_id`. If `lfc_scheduler_job_id` points to a deleted job, that’s the cause.
+
+**Fix (code):** `trigger_ingestion_and_wait.py` now catches "job does not exist"–style errors and **falls back** to `pipelines.start_update(pipeline_id=ig_pipeline_id)` so the ingestion pipeline is triggered directly and the incremental run can proceed. Redeploy/upload the updated notebook so the incremental job uses it.
+
+**Fix (manual):** If the ingestion pipeline still exists, you can trigger it by hand: `databricks pipelines start-update <ig_pipeline_id> --profile=PROFILE`. Get `ig_pipeline_id` from the same `lfc_created.json` (or from the setup job’s lfc_setup output).
+
+### Tracing jobs, runs, pipelines and the dependency graph
+
+Use run and job APIs to trace which notebook/job created a given job or pipeline.
+
+**1. From a run_id, get run metadata.** Run metadata often persists even after the job is deleted: `databricks jobs get-run <RUN_ID> --profile=PROFILE -o json`. From the response: **job_id** (parent job; may be deleted), **run_name** (e.g. LFC scheduler jobs use `{user}_{source}_{id}_ig_{pipeline_id}`), **tasks[]** with `task_key`, `pipeline_task.pipeline_id`, or `notebook_task.notebook_path`.
+
+**2. If the job is deleted**, `jobs get JOB_ID` fails. Use the **run** to infer creator: **run_name** like `robert_lee_sqlserver_42086316e_ig_809c9648-872b-4402-bf15-48516b23dad3` → LFC **ingestion scheduler job**, created by **lfcdemo-database.ipynb** (lfc_setup task), in the cell that calls `d.jobs_create(ig_job_spec)`; single task `run_dlt` with `pipeline_task.pipeline_id` = ingestion pipeline. **run_name** `dlt-meta-lfc-demo-{run_id}` → created by **launch_lfc_demo.py**.
+
+**3. Example: job 893133786814806, run 327800737236822** — `jobs get 893133786814806` → Job does not exist. `jobs get-run 327800737236822` → run_name `robert_lee_sqlserver_42086316e_ig_809c9648-...`, one task `run_dlt`, pipeline_id `809c9648-872b-4402-bf15-48516b23dad3`. So this job was the **LFC scheduler job** for ingestion pipeline 809c9648..., **created by lfcdemo-database.ipynb**; its job_id was written to `conf/lfc_created.json` as `lfc_scheduler_job_id`.
+
+**4. LFC demo dependency graph:** Setup job → **lfc_setup** (lfcdemo-database.ipynb) → creates gateway + ingestion pipelines and **LFC scheduler job** (name `{user}_{source}_{id}_ig_{pipeline_id}`), writes **lfc_created.json** and overwrites onboarding.json → onboarding_job → bronze_dlt, silver_dlt. Incremental job → **trigger task** reads lfc_created.json, calls run_now(scheduler job) or start_update(ig_pipeline_id) → bronze_dlt → silver_dlt.
 
 ---
 

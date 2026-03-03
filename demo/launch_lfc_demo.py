@@ -65,6 +65,7 @@ class LFCRunnerConf(DLTMetaRunnerConf):
     connection_name: str = None     # Databricks connection name for the source DB
     cdc_qbc: str = "cdc"            # LFC pipeline mode
     trigger_interval_min: str = "5" # LFC trigger interval in minutes
+    sequence_by_pk: bool = False   # if True, use primary key for CDC silver sequence_by; else use dt
     lfc_notebook_ws_path: str = None  # resolved workspace path of the uploaded LFC notebook
     setup_job_id: int = None       # setup job id (set when resolving incremental; used to write metadata)
 
@@ -109,6 +110,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             connection_name=self.args.get("connection_name"),
             cdc_qbc=self.args.get("cdc_qbc") or "cdc",
             trigger_interval_min=str(self.args.get("trigger_interval_min") or "5"),
+            sequence_by_pk=bool(self.args.get("sequence_by_pk")),
         )
 
         if self.args.get("uc_catalog_name"):
@@ -298,7 +300,11 @@ class DLTMETALFCDemo(DLTMETARunner):
                 entry["bronze_data_quality_expectations_json_prod"] = (
                     f"{vol}/conf/dqe/bronze_dqe.json"
                 )
-                entry["silver_cdc_apply_changes"] = LFC_INTPK_SILVER_CDC_APPLY_CHANGES
+                silver_seq = "pk" if runner_conf.sequence_by_pk else "dt"
+                entry["silver_cdc_apply_changes"] = {
+                    **LFC_INTPK_SILVER_CDC_APPLY_CHANGES,
+                    "sequence_by": silver_seq,
+                }
                 # silver DQE already set above; pipeline uses DQE-then-CDC path for intpk
             else:
                 entry["bronze_data_quality_expectations_json_prod"] = (
@@ -525,6 +531,7 @@ class DLTMETALFCDemo(DLTMETARunner):
                         "target_catalog":       runner_conf.uc_catalog_name,
                         "source_schema":        runner_conf.lfc_schema,
                         "run_id":               runner_conf.run_id,
+                        "sequence_by_pk":       str(runner_conf.sequence_by_pk).lower(),
                     },
                 ),
             ),
@@ -641,6 +648,7 @@ lfc_args_map = {
     "--connection_name":      "Databricks connection name for source DB (e.g. lfcddemo-azure-sqlserver)",
     "--cdc_qbc":              "LFC pipeline mode: cdc | qbc | cdc_single_pipeline (default: cdc)",
     "--trigger_interval_min": "LFC trigger interval in minutes — positive integer (default: 5)",
+    "--sequence_by_pk":       "Use primary key for CDC silver sequence_by; default: use dt column",
     "--run_id":               "Existing run_id to re-trigger bronze/silver; implies incremental mode",
 }
 

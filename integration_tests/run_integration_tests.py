@@ -1053,6 +1053,12 @@ def process_arguments() -> dict[str:str]:
             parser.add_argument(
                 f"--{arg[0]}", help=arg[1], type=arg[2], required=arg[3]
             )
+    # LFC demo: boolean flag for CDC silver sequence_by (store_true)
+    parser.add_argument(
+        "--sequence_by_pk",
+        action="store_true",
+        help="Use primary key for CDC silver sequence_by (lfc demo). Default: use dt column.",
+    )
     args = vars(parser.parse_args())
 
     def check_cond_mandatory_arg(args, mandatory_args):

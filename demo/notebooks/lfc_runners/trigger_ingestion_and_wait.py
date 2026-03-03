@@ -46,9 +46,19 @@ ws = WorkspaceClient()
 
 # Force trigger: run the LFC scheduler job once (same as lfcdemo-database.ipynb jobs_runnow).
 # We do not wait for the job run to finish; we wait for the pipeline update below.
+# If the scheduler job was deleted (e.g. by LFC auto-cleanup), lfc_created.json still has its id;
+# fall back to starting the ingestion pipeline directly.
 if lfc_scheduler_job_id:
-    ws.jobs.run_now(job_id=lfc_scheduler_job_id)
-    print(f"Triggered ingestion via scheduler job {lfc_scheduler_job_id} (not waiting for job run).")
+    try:
+        ws.jobs.run_now(job_id=lfc_scheduler_job_id)
+        print(f"Triggered ingestion via scheduler job {lfc_scheduler_job_id} (not waiting for job run).")
+    except Exception as e:
+        err = str(e).lower()
+        if "does not exist" in err or "invalidparametervalue" in err or "job" in err and "not found" in err:
+            print(f"Scheduler job {lfc_scheduler_job_id} no longer exists ({e}); starting ingestion pipeline directly.")
+            ws.pipelines.start_update(pipeline_id=ig_pipeline_id)
+        else:
+            raise
 else:
     ws.pipelines.start_update(pipeline_id=ig_pipeline_id)
     print("No scheduler job; started pipeline update directly.")
