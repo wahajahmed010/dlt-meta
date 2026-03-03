@@ -9,6 +9,7 @@ draft: false
 
 This demo uses [Lakeflow Connect](https://docs.databricks.com/en/data-governance/lakeflow-connect/index.html) (LFC) to stream two tables — `intpk` and `dtix` — from a source database (SQL Server, PostgreSQL, or MySQL) into Databricks streaming tables, then feeds those directly into a DLT-Meta bronze and silver pipeline. No CSV files or Autoloader are involved; the bronze source is `delta` (streaming table reads).
 
+LFC can produce SCD Type 1 and SCD Type 2 stream tables.  SCD Type 1 generate insert/update/delete.  SCD Type 2 generate insert/update where the update changes the __end_time field on the primary key.  When no primary key exists on the source, LFC assumes entire row is the primary key.
 ---
 
 ### How the demo configures bronze (SCD type per table)
@@ -20,10 +21,10 @@ This demo **hardcodes** the behavior per table so you don’t have to choose at 
 | Table  | SCD type | Source behavior              | Bronze config |
 |--------|----------|------------------------------|----------------------------------------------|
 | **intpk** | Type 1   | Can have insert/update/delete | **Process** CDC: `bronze_reader_options: {"readChangeFeed": "true"}` and `bronze_cdc_apply_changes` (keys `pk`, `sequence_by` `_commit_version`, etc., SCD type 1). LFC table must have **change data feed** enabled at creation; you cannot alter the LFC streaming table after creation (see limitation below). |
-| **dtix**  | Type 2   | Append-only                  | `bronze_reader_options: {}` and bronze DQE; no CDC apply. |
+| **dtix**  | Type 2   | LFC MERGEs (history)         | **Process** CDC: `bronze_reader_options: {"readChangeFeed": "true"}` and `bronze_cdc_apply_changes` (keys `dt`, `sequence_by` `_commit_version`, SCD type 2) so bronze/silver get accurate `__START_AT`/`__END_AT`. |
 
 - **intpk** is treated as **SCD Type 1**: the source may have updates and deletes. The demo **processes** them by reading the Delta change data feed (`readChangeFeed: true`) and applying CDC with `bronze_cdc_apply_changes` (keys, `sequence_by`, `apply_as_deletes`, etc.), so bronze reflects inserts, updates, and deletes. The LFC-created streaming table for `intpk` must have change data feed enabled **at creation**; you cannot enable it later via `ALTER TABLE` or `ALTER STREAMING TABLE` (see limitation below).
-- **dtix** is treated as **SCD Type 2** (append-only): no updates/deletes in the source, so no change feed or CDC apply is needed.
+- **dtix** is **SCD Type 2** (LFC writes MERGE: update previous row’s `__END_AT`, insert new version). We use `readChangeFeed: true` and `bronze_cdc_apply_changes` (and silver CDC) with `scd_type: "2"` so the merge is applied and **`__END_AT` is accurate** in bronze and silver. (Using `skipChangeCommits: true` would avoid the stream failure but **would not** merge those updates, so `__END_AT` would be wrong.)
 
 **CDC: keys and sequence_by.** For CDC (insert/update/delete), `keys` (e.g. `pk`) is required to identify the row. **`sequence_by` cannot be blank** when using CDC — it is required so the merge knows which version of a row is latest. **`sequence_by` cannot be the same as the key** (e.g. not `pk` for both): it must be a column or CDF field that orders different versions of the same row (e.g. `_commit_version` or a timestamp). Even for the Lakeflow Connect SCD Type 1 special case, the primary key alone does not provide that ordering. Since **intpk** is coming from Lakeflow Connect, which performs the merge itself, a source date/time column is not required for **bronze**: the demo uses Delta CDF’s `_commit_version` as `sequence_by`. For **silver**, the demo uses the table column `dt` as `sequence_by`.
 
@@ -31,10 +32,10 @@ This demo **hardcodes** the behavior per table so you don’t have to choose at 
 
 This is wired in two places so they stay in sync:
 
-1. **Launcher** (`demo/launch_lfc_demo.py`) — when it writes `onboarding.json` to the run’s volume, it sets for `intpk`: `bronze_reader_options: {"readChangeFeed": "true"}`, `bronze_cdc_apply_changes`, and bronze + silver DQE (pipeline uses DQE-then-CDC); for `dtix`: `bronze_reader_options: {}` and bronze DQE only.
-2. **LFC notebook** (`demo/lfcdemo-database.ipynb`) — after creating the LFC pipelines, it overwrites `conf/onboarding.json` on the same volume with the correct `source_database` (the LFC-created schema) and the same per-table config (intpk = readChangeFeed + bronze_cdc_apply_changes + DQE, dtix = DQE only).
+1. **Launcher** (`demo/launch_lfc_demo.py`) — when it writes `onboarding.json` to the run’s volume, it sets for `intpk`: `readChangeFeed` + `bronze_cdc_apply_changes` SCD1 + DQE; for `dtix`: `readChangeFeed` + `bronze_cdc_apply_changes` SCD2 + DQE (and silver CDC SCD2) so `__END_AT` is accurate when LFC MERGEs.
+2. **LFC notebook** (`demo/lfcdemo-database.ipynb`) — after creating the LFC pipelines, it overwrites `conf/onboarding.json` with the same per-table config (intpk = readChangeFeed + CDC SCD1 + DQE, dtix = readChangeFeed + CDC SCD2 + DQE).
 
-**CDC and DQE together:** When both `dataQualityExpectations` and `cdcApplyChanges` are set, DLT-Meta runs **DQE then CDC**: it first writes rows that pass expectations to an intermediate table `<table>_dq` (e.g. `intpk_dq`), then runs `create_auto_cdc_flow` from that table to the final target. So CDC flows (e.g. `intpk`) can have DQE; the demo sets both bronze/silver DQE and CDC for `intpk`. Append-only flows (e.g. `dtix`) use only DQE.
+**CDC and DQE together:** When both `dataQualityExpectations` and `cdcApplyChanges` are set, DLT-Meta runs **DQE then CDC**: it first writes rows that pass expectations to an intermediate table `<table>_dq`, then runs `create_auto_cdc_flow` from that table to the final target. The demo sets both DQE and CDC for **intpk** (SCD1) and **dtix** (SCD2) so both get accurate merge semantics and `__END_AT` where applicable.
 
 You do **not** pass SCD type on the command line; the demo uses this table-based setup by default. To **skip** changes instead of processing them (e.g. `skipChangeCommits: true` for intpk), change the onboarding config and remove `bronze_cdc_apply_changes` for that flow.
 
@@ -116,6 +117,11 @@ To use the **primary key** as the CDC silver `sequence_by` (instead of the `dt` 
 python demo/launch_lfc_demo.py ... --sequence_by_pk
 ```
 
+**Default: parallel downstream.** The launcher creates two jobs: the setup job (notebook only) and a downstream job (onboarding → bronze → silver). The notebook triggers the downstream job when config and tables are ready, then keeps running (e.g. 1 hour cleanup) until the scheduler queue is empty. To use the single-job flow (lfc_setup → onboarding → bronze → silver) instead:
+```commandline
+python demo/launch_lfc_demo.py ... --no_parallel_downstream
+```
+
 Normally you do **not** pass `--source_schema`; it is read from the **Databricks secret** associated with the connection specified by `connection_name`. Pass it only to override that value.
 
 **Parameters:**
@@ -128,6 +134,7 @@ Normally you do **not** pass `--source_schema`; it is read from the **Databricks
 | `cdc_qbc` | LFC pipeline mode | `cdc` \| `qbc` \| `cdc_single_pipeline` |
 | `trigger_interval_min` | LFC trigger interval in minutes (positive integer) | `5` |
 | `sequence_by_pk` | Use primary key (`pk`) for CDC silver `sequence_by`; if omitted, use `dt` column | `false` (use `dt`) |
+| `parallel_downstream` | *(Default on.)* Notebook triggers onboarding → bronze → silver when volume/tables are ready and keeps running until scheduler queue is empty. | on (use `--no_parallel_downstream` to disable) |
 | `profile` | Databricks CLI profile | `DEFAULT` |
 | `run_id` | Existing `run_id` — presence implies incremental (re-trigger) mode | — |
 
@@ -158,6 +165,35 @@ Alternatively, click **Run now** on the `dlt-meta-lfc-demo-incremental-<run_id>`
 2. **Bronze pipeline runs** – The bronze pipeline reads from the LFC streaming tables via `spark.readStream.table()` and writes to bronze Delta tables. All rows pass through (no quarantine rules).
 3. **Silver pipeline runs** – The silver pipeline applies pass-through transformations (`select *`) from the metadata and writes to silver tables.
 
+**Job flow (parallel downstream, default):** The setup job runs `lfcdemo-database.ipynb`, which creates the LFC gateway and ingestion pipelines, writes config, waits for tables, then **starts Job 2** and keeps running (DML, cleanup, and wait until the scheduler queue is empty). Job 2 runs onboarding → bronze → silver in parallel.
+
+```mermaid
+flowchart TB
+  subgraph J1["Job 1: dlt-meta-lfc-demo-{run_id} (lfcdemo-database.ipynb)"]
+    direction TB
+    A[gateway pipeline]
+    B[ingestion pipeline]
+    C[write config / wait pipelines & table]
+    D[start Job 2]
+    E[DML / cleanup section]
+    F[wait scheduler queue empty]
+    A --> B --> C --> D --> E --> F
+  end
+
+  subgraph J2["Job 2: dlt-meta-lfc-demo-{run_id}-downstream"]
+    direction TB
+    G[onboarding_job]
+    H[bronze_dlt]
+    I[silver_dlt]
+    G --> H --> I
+  end
+
+  D -.->|jobs.run_now| G
+```
+
+- **Job 1** (single task: notebook): gateway and ingestion pipelines are created; config is written; after pipelines and table are ready, the notebook calls `jobs.run_now(downstream_job_id)` to start **Job 2**, then continues with DML/cleanup and exits only when the scheduler queue is empty.
+- **Job 2** (three tasks): runs onboarding → bronze_dlt → silver_dlt; no dependency on Job 1 completing.
+
 ---
 
 ### Onboarding Configuration
@@ -167,7 +203,7 @@ DLT-Meta is configured with `source_format: delta` and points directly at the LF
 **Per-table bronze config (demo default):**
 
 - **intpk** — Process CDC: `bronze_reader_options: {"readChangeFeed": "true"}` and `bronze_cdc_apply_changes` (keys `pk`, `sequence_by` `_commit_version`, `apply_as_deletes` `_change_type = 'delete'`, SCD type 1). LFC table must have change data feed enabled. No bronze DQE (pipeline uses CDC path).
-- **dtix** — `bronze_reader_options: {}` and bronze DQE (Type 2 append-only).
+- **dtix** — `readChangeFeed: true` and `bronze_cdc_apply_changes` (keys `dt`, `sequence_by` `_commit_version`, SCD type 2) and silver CDC SCD2; DQE on both layers. Ensures `__END_AT` is accurate when LFC MERGEs.
 
 `<lfc_schema>` is the schema where LFC created the streaming tables (e.g. `main.<user>_sqlserver_<id>`). The notebook overwrites `onboarding.json` with that schema and these options.
 
@@ -212,11 +248,14 @@ DLT-Meta is configured with `source_format: delta` and points directly at the LF
     },
     "bronze_database_prod": "<catalog>.dlt_meta_bronze_lfc_<run_id>",
     "bronze_table": "dtix",
-    "bronze_reader_options": {},
+    "bronze_reader_options": { "readChangeFeed": "true" },
+    "bronze_cdc_apply_changes": { "keys": ["dt"], "sequence_by": "_commit_version", "scd_type": "2", "apply_as_deletes": "_change_type = 'delete'", "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"] },
     "bronze_data_quality_expectations_json_prod": "<volume_path>/conf/dqe/bronze_dqe.json",
     "silver_database_prod": "<catalog>.dlt_meta_silver_lfc_<run_id>",
     "silver_table": "dtix",
-    "silver_transformation_json_prod": "<volume_path>/conf/silver_transformations.json"
+    "silver_transformation_json_prod": "<volume_path>/conf/silver_transformations.json",
+    "silver_data_quality_expectations_json_prod": "<volume_path>/conf/dqe/silver_dqe.json",
+    "silver_cdc_apply_changes": { "keys": ["dt"], "sequence_by": "dt", "scd_type": "2" }
   }
 ]
 ```
@@ -278,9 +317,9 @@ DLT-Meta Silver
 
 1. **First failure (MERGE at version 9).** The LFC source table `intpk` is a streaming table that receives CDC data (including UPDATE and DELETE / MERGE). The bronze DLT flow does a streaming read and by default expects an **append-only** source. When the source had a MERGE at version 9, the streaming read failed.
 
-2. **First fix: skipChangeCommits.** We set `bronze_reader_options: {"skipChangeCommits": "true"}` in the launcher and in the notebook’s overwrite of `conf/onboarding.json`, so the bronze read **skipped** non-append commits (merge/delete) instead of failing.
+2. **First fix: skipChangeCommits.** We set `bronze_reader_options: {"skipChangeCommits": "true"}` for dtix so the bronze read **skipped** non-append commits instead of failing — but that does **not** merge updates, so `__END_AT` was inaccurate.
 
-3. **Switch to processing CDC.** Later we changed the default to **process** inserts/updates/deletes for `intpk` using `readChangeFeed: true` and `bronze_cdc_apply_changes` (no more skipChangeCommits). That requires the source table to have change data feed enabled.
+3. **Switch to processing CDC.** For `intpk` we use `readChangeFeed: true` and `bronze_cdc_apply_changes` SCD1. For **dtix** we now use `readChangeFeed: true` and `bronze_cdc_apply_changes` (and silver CDC) with **SCD type 2** so the MERGE is applied and **`__END_AT` is accurate** in bronze and silver. Change data feed must be enabled on the LFC tables (default).
 
 4. **Suspicion without checking.** When the DLT (bronze) pipeline update failed again, we **suspected** `delta.enableChangeDataFeed` was false and added an `ALTER TABLE ... SET TBLPROPERTIES` step **without checking** the table property. In reality LFC sets CDF to true by default; the failure was likely something else (table not found, wrong schema, or timing). The ALTER step is not allowed on LFC streaming tables and is unnecessary. The notebook now skips the ALTER when the platform reports that property changes are not allowed and resolves the table location from `lfc_created.json` with a longer wait.
 

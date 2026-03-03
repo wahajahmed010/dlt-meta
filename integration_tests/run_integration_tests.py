@@ -1059,6 +1059,11 @@ def process_arguments() -> dict[str:str]:
         action="store_true",
         help="Use primary key for CDC silver sequence_by (lfc demo). Default: use dt column.",
     )
+    parser.add_argument(
+        "--no_parallel_downstream",
+        action="store_true",
+        help="LFC demo: disable parallel downstream (single job: lfc_setup → onboarding → bronze → silver). Default: parallel_downstream on.",
+    )
     args = vars(parser.parse_args())
 
     def check_cond_mandatory_arg(args, mandatory_args):

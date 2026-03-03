@@ -101,6 +101,7 @@ def delete_jobs_and_pipelines(ws, run_id):
     pipeline_ids = []
     for jname in [
         f"dlt-meta-lfc-demo-{run_id}",
+        f"dlt-meta-lfc-demo-{run_id}-downstream",
         f"dlt-meta-lfc-demo-incremental-{run_id}",
     ]:
         j = next((x for x in ws.jobs.list(name=jname) if x.settings.name == jname), None)

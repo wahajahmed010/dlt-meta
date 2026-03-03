@@ -36,8 +36,8 @@ from integration_tests.run_integration_tests import (
 )
 
 LFC_TABLES = ["intpk", "dtix"]
-# Demo: intpk = process insert/update/delete via CDC apply + change data feed; dtix = append-only
-LFC_TABLE_BRONZE_READER_OPTIONS = {"intpk": {"readChangeFeed": "true"}, "dtix": {}}
+# Demo: intpk = CDC SCD1; dtix = CDC SCD2 so we merge and get accurate __END_AT (LFC writes MERGE for history).
+LFC_TABLE_BRONZE_READER_OPTIONS = {"intpk": {"readChangeFeed": "true"}, "dtix": {"readChangeFeed": "true"}}
 # intpk: bronze_cdc_apply_changes (process CDC). Uses Delta CDF columns: _change_type, _commit_version.
 # LFC streaming table must have delta.enableChangeDataFeed = true for intpk.
 LFC_INTPK_BRONZE_CDC_APPLY_CHANGES = {
@@ -47,11 +47,26 @@ LFC_INTPK_BRONZE_CDC_APPLY_CHANGES = {
     "apply_as_deletes": "_change_type = 'delete'",
     "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"],
 }
+# dtix: SCD Type 2 so bronze/silver get accurate __START_AT/__END_AT when LFC MERGEs (update previous row + insert new version).
+# Key "dt" identifies the logical row in the demo dtix table; use your table's business key if different.
+LFC_DTIX_BRONZE_CDC_APPLY_CHANGES = {
+    "keys": ["dt"],
+    "sequence_by": "_commit_version",
+    "scd_type": "2",
+    "apply_as_deletes": "_change_type = 'delete'",
+    "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"],
+}
 # Silver merge by pk so intpk silver accepts insert/update/delete (one row per pk)
 LFC_INTPK_SILVER_CDC_APPLY_CHANGES = {
     "keys": ["pk"],
     "sequence_by": "dt",
     "scd_type": "1",
+}
+# dtix silver: SCD Type 2 so __START_AT/__END_AT are accurate
+LFC_DTIX_SILVER_CDC_APPLY_CHANGES = {
+    "keys": ["dt"],
+    "sequence_by": "dt",
+    "scd_type": "2",
 }
 LFC_DEFAULT_SCHEMA = "lfcddemo"
 # Cap jobs.list() to avoid slow full-workspace iteration (API returns 25 per page)
@@ -66,6 +81,8 @@ class LFCRunnerConf(DLTMetaRunnerConf):
     cdc_qbc: str = "cdc"            # LFC pipeline mode
     trigger_interval_min: str = "5" # LFC trigger interval in minutes
     sequence_by_pk: bool = False   # if True, use primary key for CDC silver sequence_by; else use dt
+    parallel_downstream: bool = True   # default True; notebook triggers onboarding→bronze→silver when ready and keeps running. Use --no_parallel_downstream to disable.
+    downstream_job_id: int = None  # when parallel_downstream, ID of the onboarding→bronze→silver job (set by launcher)
     lfc_notebook_ws_path: str = None  # resolved workspace path of the uploaded LFC notebook
     setup_job_id: int = None       # setup job id (set when resolving incremental; used to write metadata)
 
@@ -111,6 +128,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             cdc_qbc=self.args.get("cdc_qbc") or "cdc",
             trigger_interval_min=str(self.args.get("trigger_interval_min") or "5"),
             sequence_by_pk=bool(self.args.get("sequence_by_pk")),
+            parallel_downstream=not bool(self.args.get("no_parallel_downstream")),
         )
 
         if self.args.get("uc_catalog_name"):
@@ -197,10 +215,19 @@ class DLTMETALFCDemo(DLTMETARunner):
             job_details = setup_job
         runner_conf.setup_job_id = job_details.job_id
 
+        # When parallel_downstream was used, onboarding and pipeline IDs live in the downstream job
+        job_for_downstream = job_details
+        if meta and meta.get("downstream_job_id") is not None:
+            try:
+                job_for_downstream = self.ws.jobs.get(job_id=meta["downstream_job_id"])
+                print(f"  Using downstream_job_id={meta['downstream_job_id']} for onboarding/pipelines")
+            except Exception:
+                pass
+
         if not runner_conf.uc_catalog_name:
             # Derive uc_catalog_name from the onboarding_job task's "database" parameter
             onboarding_task = next(
-                (t for t in job_details.settings.tasks if t.task_key == "onboarding_job"),
+                (t for t in job_for_downstream.settings.tasks if t.task_key == "onboarding_job"),
                 None,
             )
             if onboarding_task and onboarding_task.python_wheel_task:
@@ -237,9 +264,9 @@ class DLTMETALFCDemo(DLTMETARunner):
         print(f"  Derived lfc_schema={runner_conf.lfc_schema}")
         print(f"  Derived trigger_interval_min={runner_conf.trigger_interval_min}")
 
-        # Extract pipeline IDs directly from job task definitions
-        print("Extracting pipeline IDs from setup job tasks...")
-        for t in job_details.settings.tasks:
+        # Extract pipeline IDs from job that has bronze_dlt/silver_dlt (main or downstream)
+        print("Extracting pipeline IDs from job tasks...")
+        for t in job_for_downstream.settings.tasks:
             if t.task_key == "bronze_dlt" and t.pipeline_task:
                 runner_conf.bronze_pipeline_id = t.pipeline_task.pipeline_id
             elif t.task_key == "silver_dlt" and t.pipeline_task:
@@ -261,7 +288,7 @@ class DLTMETALFCDemo(DLTMETARunner):
         directly to the UC Volume via the Files API.
         DLT-Meta is configured with source_format=delta, pointing at the two
         streaming tables created by lfcdemo-database.ipynb (intpk, dtix).
-        Demo: intpk = process insert/update/delete (bronze_cdc_apply_changes + readChangeFeed); dtix = append-only.
+        Demo: intpk = CDC SCD1; dtix = CDC SCD2 (readChangeFeed + bronze/silver_cdc_apply_changes) so __END_AT is accurate.
         """
         vol = runner_conf.uc_volume_path.rstrip("/")
         onboarding = []
@@ -307,9 +334,12 @@ class DLTMETALFCDemo(DLTMETARunner):
                 }
                 # silver DQE already set above; pipeline uses DQE-then-CDC path for intpk
             else:
+                # dtix: SCD Type 2 with readChangeFeed + CDC so __END_AT is accurate in bronze/silver
+                entry["bronze_cdc_apply_changes"] = LFC_DTIX_BRONZE_CDC_APPLY_CHANGES
                 entry["bronze_data_quality_expectations_json_prod"] = (
                     f"{vol}/conf/dqe/bronze_dqe.json"
                 )
+                entry["silver_cdc_apply_changes"] = LFC_DTIX_SILVER_CDC_APPLY_CHANGES
             onboarding.append(entry)
 
         # Pass-through: select all columns as-is
@@ -464,12 +494,15 @@ class DLTMETALFCDemo(DLTMETARunner):
         print(f"Incremental run triggered. job_id={incr_job.job_id}, url={url}")
 
     def launch_workflow(self, runner_conf: LFCRunnerConf):
+        if runner_conf.parallel_downstream:
+            downstream_job = self._create_downstream_only_job(runner_conf)
+            runner_conf.downstream_job_id = downstream_job.job_id
         created_job = self._create_lfc_demo_workflow(runner_conf)
         runner_conf.job_id = created_job.job_id
-        self._write_setup_metadata(
-            runner_conf,
-            {"job_id": created_job.job_id, "uc_catalog_name": runner_conf.uc_catalog_name},
-        )
+        meta = {"job_id": created_job.job_id, "uc_catalog_name": runner_conf.uc_catalog_name}
+        if runner_conf.parallel_downstream and runner_conf.downstream_job_id:
+            meta["downstream_job_id"] = runner_conf.downstream_job_id
+        self._write_setup_metadata(runner_conf, meta)
         self.ws.jobs.run_now(job_id=created_job.job_id)
 
         oid = self.ws.get_workspace_id()
@@ -487,7 +520,11 @@ class DLTMETALFCDemo(DLTMETARunner):
             f"\n  Volume    : {vol_url}"
             f"\n  Workspace : {ws_url}"
             f"\n  Job       : {job_url}"
-            f"\n\nSetup complete!"
+            + (
+                f"\n  Downstream: {self.ws.config.host}/jobs/{runner_conf.downstream_job_id}?o={oid}"
+                if runner_conf.parallel_downstream and runner_conf.downstream_job_id else ""
+            )
+            + f"\n\nSetup complete!"
             f"\n  run_id : {runner_conf.run_id}"
             f"\nTo re-trigger bronze/silver with the latest LFC data, run:"
             f"\n  python demo/launch_lfc_demo.py --profile={profile} --run_id={runner_conf.run_id}"
@@ -497,48 +534,12 @@ class DLTMETALFCDemo(DLTMETARunner):
 
     # ── job definitions ──────────────────────────────────────────────────────
 
-    def _create_lfc_demo_workflow(self, runner_conf: LFCRunnerConf):
-        """
-        Create the main setup job:
-          lfc_setup → onboarding_job → bronze_dlt → silver_dlt
-        """
-        dltmeta_environments = [
-            jobs.JobEnvironment(
-                environment_key="dl_meta_int_env",
-                spec=compute.Environment(
-                    client="1",
-                    dependencies=[runner_conf.remote_whl_path],
-                ),
-            )
-        ]
-
-        # Do not retry on failure: avoid a 2nd run that would create a 2nd set of LFC pipelines.
-        tasks = [
-            jobs.Task(
-                task_key="lfc_setup",
-                description=(
-                    "Run lfcdemo-database.ipynb: creates LFC gateway + ingestion pipelines, "
-                    "starts DML against the source DB, then blocks until pipelines are RUNNING"
-                ),
-                max_retries=0,
-                timeout_seconds=0,
-                notebook_task=jobs.NotebookTask(
-                    notebook_path=runner_conf.lfc_notebook_ws_path,
-                    base_parameters={
-                        "connection":           runner_conf.connection_name,
-                        "cdc_qbc":              runner_conf.cdc_qbc,
-                        "trigger_interval_min": runner_conf.trigger_interval_min,
-                        "target_catalog":       runner_conf.uc_catalog_name,
-                        "source_schema":        runner_conf.lfc_schema,
-                        "run_id":               runner_conf.run_id,
-                        "sequence_by_pk":       str(runner_conf.sequence_by_pk).lower(),
-                    },
-                ),
-            ),
+    def _downstream_tasks(self, runner_conf: LFCRunnerConf):
+        """Onboarding → bronze_dlt → silver_dlt (no dependency on lfc_setup)."""
+        return [
             jobs.Task(
                 task_key="onboarding_job",
                 description="Register LFC streaming tables as DLT-Meta delta sources",
-                depends_on=[jobs.TaskDependency(task_key="lfc_setup")],
                 environment_key="dl_meta_int_env",
                 max_retries=0,
                 timeout_seconds=0,
@@ -586,6 +587,124 @@ class DLTMETALFCDemo(DLTMETARunner):
                 ),
             ),
         ]
+
+    def _create_downstream_only_job(self, runner_conf: LFCRunnerConf):
+        """Create job: onboarding_job → bronze_dlt → silver_dlt (triggered by notebook when volume is ready)."""
+        dltmeta_environments = [
+            jobs.JobEnvironment(
+                environment_key="dl_meta_int_env",
+                spec=compute.Environment(
+                    client="1",
+                    dependencies=[runner_conf.remote_whl_path],
+                ),
+            )
+        ]
+        created = self.ws.jobs.create(
+            name=f"dlt-meta-lfc-demo-{runner_conf.run_id}-downstream",
+            environments=dltmeta_environments,
+            tasks=self._downstream_tasks(runner_conf),
+        )
+        self._job_set_no_retry(created.job_id)
+        return created
+
+    def _create_lfc_demo_workflow(self, runner_conf: LFCRunnerConf):
+        """
+        Create the main setup job. If parallel_downstream: single task lfc_setup (notebook
+        triggers downstream job when ready). Else: lfc_setup → onboarding_job → bronze_dlt → silver_dlt.
+        """
+        dltmeta_environments = [
+            jobs.JobEnvironment(
+                environment_key="dl_meta_int_env",
+                spec=compute.Environment(
+                    client="1",
+                    dependencies=[runner_conf.remote_whl_path],
+                ),
+            )
+        ]
+
+        base_params = {
+            "connection":           runner_conf.connection_name,
+            "cdc_qbc":              runner_conf.cdc_qbc,
+            "trigger_interval_min": runner_conf.trigger_interval_min,
+            "target_catalog":       runner_conf.uc_catalog_name,
+            "source_schema":        runner_conf.lfc_schema,
+            "run_id":               runner_conf.run_id,
+            "sequence_by_pk":       str(runner_conf.sequence_by_pk).lower(),
+        }
+        if runner_conf.parallel_downstream:
+            base_params["downstream_job_id"] = str(runner_conf.downstream_job_id)
+
+        lfc_setup_task = jobs.Task(
+            task_key="lfc_setup",
+            description=(
+                "Run lfcdemo-database.ipynb: creates LFC gateway + ingestion pipelines, "
+                "starts DML; when parallel_downstream, triggers onboarding→bronze→silver when ready and keeps running"
+            ),
+            max_retries=0,
+            timeout_seconds=0,
+            notebook_task=jobs.NotebookTask(
+                notebook_path=runner_conf.lfc_notebook_ws_path,
+                base_parameters=base_params,
+            ),
+        )
+
+        if runner_conf.parallel_downstream:
+            tasks = [lfc_setup_task]
+        else:
+            onboarding_task = jobs.Task(
+                task_key="onboarding_job",
+                description="Register LFC streaming tables as DLT-Meta delta sources",
+                depends_on=[jobs.TaskDependency(task_key="lfc_setup")],
+                environment_key="dl_meta_int_env",
+                max_retries=0,
+                timeout_seconds=0,
+                python_wheel_task=jobs.PythonWheelTask(
+                    package_name="dlt_meta",
+                    entry_point="run",
+                    named_parameters={
+                        "onboard_layer":             "bronze_silver",
+                        "database":                  (
+                            f"{runner_conf.uc_catalog_name}.{runner_conf.dlt_meta_schema}"
+                        ),
+                        "onboarding_file_path":      (
+                            f"{runner_conf.uc_volume_path}conf/onboarding.json"
+                        ),
+                        "silver_dataflowspec_table": "silver_dataflowspec_cdc",
+                        "silver_dataflowspec_path":  (
+                            f"{runner_conf.uc_volume_path}data/dlt_spec/silver"
+                        ),
+                        "bronze_dataflowspec_table": "bronze_dataflowspec_cdc",
+                        "bronze_dataflowspec_path":  (
+                            f"{runner_conf.uc_volume_path}data/dlt_spec/bronze"
+                        ),
+                        "import_author":             "dlt-meta-lfc",
+                        "version":                   "v1",
+                        "overwrite":                 "True",
+                        "env":                       runner_conf.env,
+                        "uc_enabled":                "True",
+                    },
+                ),
+            )
+            tasks = [
+                lfc_setup_task,
+                onboarding_task,
+                jobs.Task(
+                    task_key="bronze_dlt",
+                    depends_on=[jobs.TaskDependency(task_key="onboarding_job")],
+                    max_retries=0,
+                    pipeline_task=jobs.PipelineTask(
+                        pipeline_id=runner_conf.bronze_pipeline_id
+                    ),
+                ),
+                jobs.Task(
+                    task_key="silver_dlt",
+                    depends_on=[jobs.TaskDependency(task_key="bronze_dlt")],
+                    max_retries=0,
+                    pipeline_task=jobs.PipelineTask(
+                        pipeline_id=runner_conf.silver_pipeline_id
+                    ),
+                ),
+            ]
 
         created = self.ws.jobs.create(
             name=f"dlt-meta-lfc-demo-{runner_conf.run_id}",
@@ -649,6 +768,7 @@ lfc_args_map = {
     "--cdc_qbc":              "LFC pipeline mode: cdc | qbc | cdc_single_pipeline (default: cdc)",
     "--trigger_interval_min": "LFC trigger interval in minutes — positive integer (default: 5)",
     "--sequence_by_pk":       "Use primary key for CDC silver sequence_by; default: use dt column",
+    "--no_parallel_downstream": "Disable parallel downstream (use single job: lfc_setup → onboarding → bronze → silver). Default: parallel_downstream is on.",
     "--run_id":               "Existing run_id to re-trigger bronze/silver; implies incremental mode",
 }
 
