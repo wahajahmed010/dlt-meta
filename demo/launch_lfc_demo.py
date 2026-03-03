@@ -41,7 +41,7 @@ LFC_TABLE_BRONZE_READER_OPTIONS = {"intpk": {"readChangeFeed": "true"}, "dtix": 
 # intpk: bronze_cdc_apply_changes (process CDC). Uses Delta CDF columns: _change_type, _commit_version.
 # LFC streaming table must have delta.enableChangeDataFeed = true for intpk.
 LFC_INTPK_BRONZE_CDC_APPLY_CHANGES = {
-    "keys": ["id"],
+    "keys": ["pk"],
     "sequence_by": "_commit_version",
     "scd_type": "1",
     "apply_as_deletes": "_change_type = 'delete'",
@@ -55,7 +55,7 @@ JOBS_LIST_LIMIT = 100
 @dataclass
 class LFCRunnerConf(DLTMetaRunnerConf):
     """Configuration for the LFC demo runner."""
-    lfc_schema: str = None          # schema where LFC writes streaming tables
+    lfc_schema: str = None          # source schema on the source DB (passed to notebook as source_schema)
     connection_name: str = None     # Databricks connection name for the source DB
     cdc_qbc: str = "cdc"            # LFC pipeline mode
     trigger_interval_min: str = "5" # LFC trigger interval in minutes
@@ -87,7 +87,7 @@ class DLTMETALFCDemo(DLTMETARunner):
         any missing fields (uc_catalog_name, lfc_schema, pipeline IDs).
         """
         run_id = self.args["run_id"] if self._is_incremental() else uuid.uuid4().hex
-        lfc_schema = self.args.get("uc_schema_name") or LFC_DEFAULT_SCHEMA
+        lfc_schema = self.args.get("source_schema") or LFC_DEFAULT_SCHEMA
 
         runner_conf = LFCRunnerConf(
             run_id=run_id,
@@ -136,6 +136,20 @@ class DLTMETALFCDemo(DLTMETARunner):
             content=io.BytesIO(json.dumps(data, indent=2).encode("utf-8")),
             format=ImportFormat.AUTO,
         )
+
+    def _job_set_no_retry(self, job_id: int):
+        """Set job-level max_retries=0 so the job is not retried on failure (SDK has no job-level field).
+        Note: Marking a job/task as 'production' in the UI does not change retry behavior; only this setting does."""
+        try:
+            self.ws.api_client.do(
+                "POST",
+                "/api/2.1/jobs/update",
+                body={"job_id": job_id, "new_settings": {"max_retries": 0}},
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to set job {job_id} to max_retries=0 (job may retry on failure): {e}"
+            ) from e
 
     def _resolve_incremental_conf(self, runner_conf: LFCRunnerConf):
         """
@@ -482,6 +496,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             )
         ]
 
+        # Do not retry on failure: avoid a 2nd run that would create a 2nd set of LFC pipelines.
         tasks = [
             jobs.Task(
                 task_key="lfc_setup",
@@ -489,6 +504,7 @@ class DLTMETALFCDemo(DLTMETARunner):
                     "Run lfcdemo-database.ipynb: creates LFC gateway + ingestion pipelines, "
                     "starts DML against the source DB, then blocks until pipelines are RUNNING"
                 ),
+                max_retries=0,
                 timeout_seconds=0,
                 notebook_task=jobs.NotebookTask(
                     notebook_path=runner_conf.lfc_notebook_ws_path,
@@ -507,6 +523,7 @@ class DLTMETALFCDemo(DLTMETARunner):
                 description="Register LFC streaming tables as DLT-Meta delta sources",
                 depends_on=[jobs.TaskDependency(task_key="lfc_setup")],
                 environment_key="dl_meta_int_env",
+                max_retries=0,
                 timeout_seconds=0,
                 python_wheel_task=jobs.PythonWheelTask(
                     package_name="dlt_meta",
@@ -538,6 +555,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             jobs.Task(
                 task_key="bronze_dlt",
                 depends_on=[jobs.TaskDependency(task_key="onboarding_job")],
+                max_retries=0,
                 pipeline_task=jobs.PipelineTask(
                     pipeline_id=runner_conf.bronze_pipeline_id
                 ),
@@ -545,17 +563,20 @@ class DLTMETALFCDemo(DLTMETARunner):
             jobs.Task(
                 task_key="silver_dlt",
                 depends_on=[jobs.TaskDependency(task_key="bronze_dlt")],
+                max_retries=0,
                 pipeline_task=jobs.PipelineTask(
                     pipeline_id=runner_conf.silver_pipeline_id
                 ),
             ),
         ]
 
-        return self.ws.jobs.create(
+        created = self.ws.jobs.create(
             name=f"dlt-meta-lfc-demo-{runner_conf.run_id}",
             environments=dltmeta_environments,
             tasks=tasks,
         )
+        self._job_set_no_retry(created.job_id)
+        return created
 
     def _create_incremental_workflow(self, runner_conf: LFCRunnerConf):
         """
@@ -568,6 +589,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             jobs.Task(
                 task_key="trigger_ingestion_and_wait",
                 description="Trigger LFC ingestion (jobs.run_now) and wait for pipeline update to complete",
+                max_retries=0,
                 notebook_task=jobs.NotebookTask(
                     notebook_path=trigger_nb_path,
                     base_parameters={
@@ -580,6 +602,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             jobs.Task(
                 task_key="bronze_dlt",
                 depends_on=[jobs.TaskDependency(task_key="trigger_ingestion_and_wait")],
+                max_retries=0,
                 pipeline_task=jobs.PipelineTask(
                     pipeline_id=runner_conf.bronze_pipeline_id
                 ),
@@ -587,21 +610,24 @@ class DLTMETALFCDemo(DLTMETARunner):
             jobs.Task(
                 task_key="silver_dlt",
                 depends_on=[jobs.TaskDependency(task_key="bronze_dlt")],
+                max_retries=0,
                 pipeline_task=jobs.PipelineTask(
                     pipeline_id=runner_conf.silver_pipeline_id
                 ),
             ),
         ]
-        return self.ws.jobs.create(
+        created = self.ws.jobs.create(
             name=f"dlt-meta-lfc-demo-incremental-{runner_conf.run_id}",
             tasks=tasks,
         )
+        self._job_set_no_retry(created.job_id)
+        return created
 
 
 lfc_args_map = {
     "--profile":              "Databricks CLI profile name (default: DEFAULT)",
     "--uc_catalog_name":      "Unity Catalog name — required for setup, derived from job in incremental mode",
-    "--uc_schema_name":       "Schema where LFC writes streaming tables (default: lfcddemo)",
+    "--source_schema":        "Source schema on the source database (default: lfcddemo)",
     "--connection_name":      "Databricks connection name for source DB (e.g. lfcddemo-azure-sqlserver)",
     "--cdc_qbc":              "LFC pipeline mode: cdc | qbc | cdc_single_pipeline (default: cdc)",
     "--trigger_interval_min": "LFC trigger interval in minutes — positive integer (default: 5)",

@@ -916,7 +916,7 @@ def process_arguments() -> dict[str:str]:
         ["table_data_rows_count", "Rows per table (techsummit, default 10)", str, False, []],
         ["run_id", "Existing run_id to resume; presence implies incremental mode (techsummit/lfc)", str, False, []],
         # Lakeflow Connect demo arguments
-        ["uc_schema_name", "Schema where LFC creates streaming tables (lfc demo, default: lfcddemo)", str, False, []],
+        ["source_schema", "Source schema on the source database (lfc demo, default: lfcddemo)", str, False, []],
         [
             "connection_name",
             "Databricks connection name for the source database (lfc demo)",

@@ -19,10 +19,10 @@ This demo **hardcodes** the behavior per table so you don’t have to choose at 
 
 | Table  | SCD type | Source behavior              | Bronze config |
 |--------|----------|------------------------------|----------------------------------------------|
-| **intpk** | Type 1   | Can have insert/update/delete | **Process** CDC: `bronze_reader_options: {"readChangeFeed": "true"}` and `bronze_cdc_apply_changes` (keys `id`, `sequence_by` `_commit_version`, `apply_as_deletes` `_change_type = 'delete'`, SCD type 1). LFC table must have **change data feed** enabled (`delta.enableChangeDataFeed = true`). |
+| **intpk** | Type 1   | Can have insert/update/delete | **Process** CDC: `bronze_reader_options: {"readChangeFeed": "true"}` and `bronze_cdc_apply_changes` (keys `pk`, `sequence_by` `_commit_version`, etc., SCD type 1). LFC table must have **change data feed** enabled at creation; you cannot alter the LFC streaming table after creation (see limitation below). |
 | **dtix**  | Type 2   | Append-only                  | `bronze_reader_options: {}` and bronze DQE; no CDC apply. |
 
-- **intpk** is treated as **SCD Type 1**: the source may have updates and deletes. The demo **processes** them by reading the Delta change data feed (`readChangeFeed: true`) and applying CDC with `bronze_cdc_apply_changes` (keys, `sequence_by`, `apply_as_deletes`, etc.), so bronze reflects inserts, updates, and deletes. The LFC-created streaming table for `intpk` must have change data feed enabled.
+- **intpk** is treated as **SCD Type 1**: the source may have updates and deletes. The demo **processes** them by reading the Delta change data feed (`readChangeFeed: true`) and applying CDC with `bronze_cdc_apply_changes` (keys, `sequence_by`, `apply_as_deletes`, etc.), so bronze reflects inserts, updates, and deletes. The LFC-created streaming table for `intpk` must have change data feed enabled **at creation**; you cannot enable it later via `ALTER TABLE` or `ALTER STREAMING TABLE` (see limitation below).
 - **dtix** is treated as **SCD Type 2** (append-only): no updates/deletes in the source, so no change feed or CDC apply is needed.
 
 This is wired in two places so they stay in sync:
@@ -31,6 +31,16 @@ This is wired in two places so they stay in sync:
 2. **LFC notebook** (`demo/lfcdemo-database.ipynb`) — after creating the LFC pipelines, it overwrites `conf/onboarding.json` on the same volume with the correct `source_database` (the LFC-created schema) and the same per-table bronze config (intpk = readChangeFeed + bronze_cdc_apply_changes, dtix = DQE only).
 
 You do **not** pass SCD type on the command line; the demo uses this table-based setup by default. To **skip** changes instead of processing them (e.g. `skipChangeCommits: true` for intpk), change the onboarding config and remove `bronze_cdc_apply_changes` for that flow.
+
+**Limitation: You cannot change table properties on LFC streaming tables after creation.** The LFC-created `intpk` (and `dtix`) tables are **streaming tables**. Databricks does not allow setting table properties on them via `ALTER TABLE` or `ALTER STREAMING TABLE` after the pipeline has created the table:
+
+- **`ALTER TABLE ... SET TBLPROPERTIES`** fails with:  
+  `[INVALID_TARGET_FOR_SET_TBLPROPERTIES_COMMAND] ALTER TABLE ... SET TBLPROPERTIES does not support '<catalog>.<schema>.intpk`. Please use ALTER STREAMING TABLE ... SET TBLPROPERTIES instead. SQLSTATE: 42809`
+
+- **`ALTER STREAMING TABLE ... SET TBLPROPERTIES`** then fails with:  
+  `[SET_TBLPROPERTIES_NOT_ALLOWED_FOR_PIPELINE_TABLE] ALTER STREAMING TABLE ... SET TBLPROPERTIES is not supported. To modify table properties, please change the original definition and run an update.`
+
+You cannot enable or change it after creation via `ALTER TABLE` or `ALTER STREAMING TABLE`. In practice, **Lakeflow Connect sets `delta.enableChangeDataFeed = true` by default** on its streaming tables, so the `intpk` table already has change data feed enabled and the demo works with `readChangeFeed: true` and `bronze_cdc_apply_changes` without any alter step.
 
 ---
 
@@ -90,11 +100,12 @@ The launch script handles everything end-to-end: it uploads the LFC notebook to 
 python demo/launch_lfc_demo.py \
   --uc_catalog_name=<catalog> \
   --connection_name=lfcddemo-azure-sqlserver \
-  --uc_schema_name=lfcddemo \
   --cdc_qbc=cdc \
   --trigger_interval_min=5 \
   --profile=DEFAULT
 ```
+
+Normally you do **not** pass `--source_schema`; it is read from the **Databricks secret** associated with the connection specified by `connection_name`. Pass it only to override that value.
 
 **Parameters:**
 
@@ -102,7 +113,7 @@ python demo/launch_lfc_demo.py \
 |-----------|-------------|-------------------|
 | `uc_catalog_name` | Unity Catalog name — required for setup | — |
 | `connection_name` | Databricks connection to source DB | `lfcddemo-azure-sqlserver` \| `lfcddemo-azure-mysql` \| `lfcddemo-azure-pg` |
-| `uc_schema_name` | Schema where LFC writes streaming tables (`intpk`, `dtix`) | `lfcddemo` |
+| `source_schema` | *(Optional)* Source schema on the source database (where the `intpk` and `dtix` tables live). When omitted, read from the Databricks secret bound to the connection. | from connection's secret when omitted |
 | `cdc_qbc` | LFC pipeline mode | `cdc` \| `qbc` \| `cdc_single_pipeline` |
 | `trigger_interval_min` | LFC trigger interval in minutes (positive integer) | `5` |
 | `profile` | Databricks CLI profile | `DEFAULT` |
@@ -143,7 +154,7 @@ DLT-Meta is configured with `source_format: delta` and points directly at the LF
 
 **Per-table bronze config (demo default):**
 
-- **intpk** — Process CDC: `bronze_reader_options: {"readChangeFeed": "true"}` and `bronze_cdc_apply_changes` (keys `id`, `sequence_by` `_commit_version`, `apply_as_deletes` `_change_type = 'delete'`, SCD type 1). LFC table must have change data feed enabled. No bronze DQE (pipeline uses CDC path).
+- **intpk** — Process CDC: `bronze_reader_options: {"readChangeFeed": "true"}` and `bronze_cdc_apply_changes` (keys `pk`, `sequence_by` `_commit_version`, `apply_as_deletes` `_change_type = 'delete'`, SCD type 1). LFC table must have change data feed enabled. No bronze DQE (pipeline uses CDC path).
 - **dtix** — `bronze_reader_options: {}` and bronze DQE (Type 2 append-only).
 
 `<lfc_schema>` is the schema where LFC created the streaming tables (e.g. `main.<user>_sqlserver_<id>`). The notebook overwrites `onboarding.json` with that schema and these options.
@@ -163,7 +174,7 @@ DLT-Meta is configured with `source_format: delta` and points directly at the LF
     "bronze_table": "intpk",
     "bronze_reader_options": { "readChangeFeed": "true" },
     "bronze_cdc_apply_changes": {
-      "keys": ["id"],
+      "keys": ["pk"],
       "sequence_by": "_commit_version",
       "scd_type": "1",
       "apply_as_deletes": "_change_type = 'delete'",
@@ -243,3 +254,17 @@ DLT-Meta Silver
 | **LFC Docs** | [Lakeflow Connect](https://docs.databricks.com/en/data-governance/lakeflow-connect/index.html) |
 | **DLT-Meta delta source** | [Metadata Preparation](../getting_started/metadatapreperation.md) |
 | **Tech Summit Demo** | [Techsummit.md](Techsummit.md) |
+
+---
+
+### History of what was tried and failed
+
+1. **First failure (MERGE at version 9).** The LFC source table `intpk` is a streaming table that receives CDC data (including UPDATE and DELETE / MERGE). The bronze DLT flow does a streaming read and by default expects an **append-only** source. When the source had a MERGE at version 9, the streaming read failed.
+
+2. **First fix: skipChangeCommits.** We set `bronze_reader_options: {"skipChangeCommits": "true"}` in the launcher and in the notebook’s overwrite of `conf/onboarding.json`, so the bronze read **skipped** non-append commits (merge/delete) instead of failing.
+
+3. **Switch to processing CDC.** Later we changed the default to **process** inserts/updates/deletes for `intpk` using `readChangeFeed: true` and `bronze_cdc_apply_changes` (no more skipChangeCommits). That requires the source table to have change data feed enabled.
+
+4. **Suspicion without checking.** When the DLT (bronze) pipeline update failed again, we **suspected** `delta.enableChangeDataFeed` was false and added an `ALTER TABLE ... SET TBLPROPERTIES` step **without checking** the table property. In reality LFC sets CDF to true by default; the failure was likely something else (table not found, wrong schema, or timing). The ALTER step is not allowed on LFC streaming tables and is unnecessary. The notebook now skips the ALTER when the platform reports that property changes are not allowed and resolves the table location from `lfc_created.json` with a longer wait.
+
+5. **Table existence check: SHOW TBLPROPERTIES vs SELECT.** The notebook used `SHOW TBLPROPERTIES` to decide if the LFC `intpk` table existed. On LFC streaming tables that can fail even when the table is queryable (`SELECT * FROM ...` runs). The existence check was changed to `SELECT 1 FROM <table> LIMIT 0` so the wait loop succeeds as soon as the table can be read.
