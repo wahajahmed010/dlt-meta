@@ -19,25 +19,32 @@ Incremental run (re-trigger after initial setup):
 
 import io
 import json
+import os
+import sys
 import traceback
 import uuid
 import webbrowser
 from dataclasses import dataclass
 
+# Ensure src/ is on sys.path so the local sdp_meta package resolves its own
+# absolute imports (e.g. databricks.labs.sdp_meta.__about__) correctly when
+# running directly from the repo root with PYTHONPATH=$(pwd).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+
 from databricks.sdk.service import compute, jobs
 from databricks.sdk.service.workspace import ImportFormat
 
-from src.install import WorkspaceInstaller
+from databricks.labs.sdp_meta.install import WorkspaceInstaller
 from integration_tests.run_integration_tests import (
-    DLTMETARunner,
-    DLTMetaRunnerConf,
+    SDPMETARunner,
+    SDPMetaRunnerConf,
     get_workspace_api_client,
     process_arguments,
 )
 
 LFC_TABLES = ["intpk", "dtix"]
-# Demo: intpk = CDC SCD1; dtix = CDC SCD2 so we merge and get accurate __END_AT (LFC writes MERGE for history).
-LFC_TABLE_BRONZE_READER_OPTIONS = {"intpk": {"readChangeFeed": "true"}, "dtix": {"readChangeFeed": "true"}}
+# intpk uses CDF (readChangeFeed). dtix uses snapshot (no CDF) — see LFC_DTIX_BRONZE_APPLY_CHANGES_FROM_SNAPSHOT.
+LFC_TABLE_BRONZE_READER_OPTIONS = {"intpk": {"readChangeFeed": "true"}}
 # intpk: bronze_cdc_apply_changes (process CDC). Uses Delta CDF columns: _change_type, _commit_version.
 # LFC streaming table must have delta.enableChangeDataFeed = true for intpk.
 LFC_INTPK_BRONZE_CDC_APPLY_CHANGES = {
@@ -47,14 +54,23 @@ LFC_INTPK_BRONZE_CDC_APPLY_CHANGES = {
     "apply_as_deletes": "_change_type = 'delete'",
     "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"],
 }
-# dtix: SCD Type 2 so bronze/silver get accurate __START_AT/__END_AT when LFC MERGEs (update previous row + insert new version).
-# Key "dt" identifies the logical row in the demo dtix table; use your table's business key if different.
-LFC_DTIX_BRONZE_CDC_APPLY_CHANGES = {
-    "keys": ["dt"],
-    "sequence_by": "_commit_version",
-    "scd_type": "2",
-    "apply_as_deletes": "_change_type = 'delete'",
-    "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"],
+# dtix: LFC SCD Type 2 — the LFC streaming table already has __START_AT/__END_AT columns.
+# DLT reserves __START_AT/__END_AT as system column names for ALL DLT operations.
+# Solution: use apply_changes_from_snapshot (snapshot, not CDF) and rename the reserved
+# LFC columns via a bronze_custom_transform in init_sdp_meta_pipeline.py:
+#   __START_AT → lfc_start_at,  __END_AT → lfc_end_at
+# source_format="snapshot" + source_details.snapshot_format="delta" triggers the
+# snapshot-comparison CDC path in DLT-Meta.
+#
+# Key choice — why (dt, lfc_end_at) and not (dt, lfc_start_at):
+#   LFC assigns __END_AT a unique __cdc_internal_value for EVERY row, including initial-load
+#   rows whose __START_AT is null.  For no-PK tables the source can hold many rows with the
+#   same dt and null __START_AT, making (dt, lfc_start_at) non-unique.
+#   __END_AT is null only for the single currently-active version of each dt value, so
+#   (dt, __END_AT) is globally unique across both historical and active rows.
+LFC_DTIX_BRONZE_APPLY_CHANGES_FROM_SNAPSHOT = {
+    "keys": ["dt", "lfc_end_at"],
+    "scd_type": "1",
 }
 # Silver merge by pk so intpk silver accepts insert/update/delete (one row per pk)
 LFC_INTPK_SILVER_CDC_APPLY_CHANGES = {
@@ -62,19 +78,25 @@ LFC_INTPK_SILVER_CDC_APPLY_CHANGES = {
     "sequence_by": "dt",
     "scd_type": "1",
 }
-# dtix silver: SCD Type 2 so __START_AT/__END_AT are accurate
-LFC_DTIX_SILVER_CDC_APPLY_CHANGES = {
-    "keys": ["dt"],
-    "sequence_by": "dt",
-    "scd_type": "2",
+# dtix silver: same snapshot approach as bronze; reads bronze as a snapshot.
+# Bronze already has lfc_start_at/lfc_end_at (renamed from LFC's __START_AT/__END_AT).
+LFC_DTIX_SILVER_APPLY_CHANGES_FROM_SNAPSHOT = {
+    "keys": ["dt", "lfc_end_at"],
+    "scd_type": "1",
 }
 LFC_DEFAULT_SCHEMA = "lfcddemo"
 # Cap jobs.list() to avoid slow full-workspace iteration (API returns 25 per page)
 JOBS_LIST_LIMIT = 100
 
+# ── Name prefix ─────────────────────────────────────────────────────────────
+# Change these two constants to rename all job/pipeline/schema/path references
+# at once without hunting through the file.
+_DEMO_SLUG   = "sdp-meta-lfc"  # hyphenated  → job/pipeline names
+_DEMO_PREFIX = "sdp_meta"      # underscored → UC schema names, workspace paths
+
 
 @dataclass
-class LFCRunnerConf(DLTMetaRunnerConf):
+class LFCRunnerConf(SDPMetaRunnerConf):
     """Configuration for the LFC demo runner."""
     lfc_schema: str = None          # source schema on the source DB (passed to notebook as source_schema)
     connection_name: str = None     # Databricks connection name for the source DB
@@ -87,7 +109,7 @@ class LFCRunnerConf(DLTMetaRunnerConf):
     setup_job_id: int = None       # setup job id (set when resolving incremental; used to write metadata)
 
 
-class DLTMETALFCDemo(DLTMETARunner):
+class DLTMETALFCDemo(SDPMETARunner):
     """Run the DLT-Meta Lakeflow Connect Demo."""
 
     def __init__(self, args, ws, base_dir):
@@ -116,11 +138,11 @@ class DLTMETALFCDemo(DLTMETARunner):
         runner_conf = LFCRunnerConf(
             run_id=run_id,
             username=self._my_username(self.ws),
-            dlt_meta_schema=f"dlt_meta_dataflowspecs_lfc_{run_id}",
-            bronze_schema=f"dlt_meta_bronze_lfc_{run_id}",
-            silver_schema=f"dlt_meta_silver_lfc_{run_id}",
+            sdp_meta_schema=f"{_DEMO_PREFIX}_dataflowspecs_lfc_{run_id}",
+            bronze_schema=f"{_DEMO_PREFIX}_bronze_lfc_{run_id}",
+            silver_schema=f"{_DEMO_PREFIX}_silver_lfc_{run_id}",
             runners_full_local_path="demo/notebooks/lfc_runners",
-            runners_nb_path=f"/Users/{self._my_username(self.ws)}/dlt_meta_lfc_demo/{run_id}",
+            runners_nb_path=f"/Users/{self._my_username(self.ws)}/{_DEMO_PREFIX}_lfc_demo/{run_id}",
             int_tests_dir="demo",
             env="prod",
             lfc_schema=lfc_schema,
@@ -183,7 +205,7 @@ class DLTMETALFCDemo(DLTMETARunner):
         pipeline IDs by inspecting the existing LFC setup job. Prefer job_id from
         setup_metadata.json (fast); fall back to jobs.list by name (slow).
         """
-        setup_job_name = f"dlt-meta-lfc-demo-{runner_conf.run_id}"
+        setup_job_name = f"{_DEMO_SLUG}-demo-{runner_conf.run_id}"
         print(f"Looking up setup job '{setup_job_name}'...")
         setup_job = None
         meta = self._read_setup_metadata(runner_conf)
@@ -246,7 +268,7 @@ class DLTMETALFCDemo(DLTMETARunner):
         # Always (re-)derive uc_volume_path — not set by initialize_uc_resources in incr. mode
         runner_conf.uc_volume_path = (
             f"/Volumes/{runner_conf.uc_catalog_name}/"
-            f"{runner_conf.dlt_meta_schema}/{runner_conf.uc_volume_name}/"
+            f"{runner_conf.sdp_meta_schema}/{runner_conf.uc_volume_name}/"
         )
 
         # Derive lfc_schema and trigger_interval_min from the lfc_setup task if not supplied
@@ -286,60 +308,83 @@ class DLTMETALFCDemo(DLTMETARunner):
         """
         Write onboarding.json, silver_transformations.json, and bronze_dqe.json
         directly to the UC Volume via the Files API.
-        DLT-Meta is configured with source_format=delta, pointing at the two
-        streaming tables created by lfcdemo-database.ipynb (intpk, dtix).
-        Demo: intpk = CDC SCD1; dtix = CDC SCD2 (readChangeFeed + bronze/silver_cdc_apply_changes) so __END_AT is accurate.
+        intpk: source_format=delta + readChangeFeed + bronze/silver_cdc_apply_changes (SCD1).
+        dtix:  source_format=snapshot + snapshot_format=delta + bronze/silver_apply_changes_from_snapshot.
+               DLT reserves __START_AT/__END_AT globally; init_sdp_meta_pipeline.py renames them
+               to lfc_start_at/lfc_end_at via bronze_custom_transform before DLT sees the schema.
         """
         vol = runner_conf.uc_volume_path.rstrip("/")
         onboarding = []
         for i, tbl in enumerate(LFC_TABLES):
-            entry = {
-                "data_flow_id": str(i + 1),
-                "data_flow_group": "A1",
-                "source_format": "delta",
-                "source_details": {
-                    "source_catalog_prod": runner_conf.uc_catalog_name,
-                    "source_database": runner_conf.lfc_schema,
-                    "source_table": tbl,
-                },
-                "bronze_database_prod": (
-                    f"{runner_conf.uc_catalog_name}.{runner_conf.bronze_schema}"
-                ),
-                "bronze_table": tbl,
-                "bronze_reader_options": LFC_TABLE_BRONZE_READER_OPTIONS.get(tbl, {}),
-                "bronze_database_quarantine_prod": (
-                    f"{runner_conf.uc_catalog_name}.{runner_conf.bronze_schema}"
-                ),
-                "bronze_quarantine_table": f"{tbl}_quarantine",
-                "silver_database_prod": (
-                    f"{runner_conf.uc_catalog_name}.{runner_conf.silver_schema}"
-                ),
-                "silver_table": tbl,
-                "silver_transformation_json_prod": (
-                    f"{vol}/conf/silver_transformations.json"
-                ),
-                "silver_data_quality_expectations_json_prod": (
-                    f"{vol}/conf/dqe/silver_dqe.json"
-                ),
-            }
-            if tbl == "intpk":
-                entry["bronze_cdc_apply_changes"] = LFC_INTPK_BRONZE_CDC_APPLY_CHANGES
-                entry["bronze_data_quality_expectations_json_prod"] = (
-                    f"{vol}/conf/dqe/bronze_dqe.json"
-                )
+            if tbl == "dtix":
+                # dtix: LFC SCD2 table has __START_AT/__END_AT which DLT reserves globally.
+                # Use apply_changes_from_snapshot (batch snapshot, no CDF) to avoid the
+                # reserved-column conflict. The bronze custom transform in
+                # init_sdp_meta_pipeline.py renames __START_AT→lfc_start_at and
+                # __END_AT→lfc_end_at before DLT analyses the schema.
+                entry = {
+                    "data_flow_id": str(i + 1),
+                    "data_flow_group": "A1",
+                    "source_format": "snapshot",
+                    "source_details": {
+                        "source_catalog_prod": runner_conf.uc_catalog_name,
+                        "source_database": runner_conf.lfc_schema,
+                        "source_table": tbl,
+                        "snapshot_format": "delta",
+                    },
+                    "bronze_database_prod": (
+                        f"{runner_conf.uc_catalog_name}.{runner_conf.bronze_schema}"
+                    ),
+                    "bronze_table": tbl,
+                    "bronze_apply_changes_from_snapshot": LFC_DTIX_BRONZE_APPLY_CHANGES_FROM_SNAPSHOT,
+                    "silver_database_prod": (
+                        f"{runner_conf.uc_catalog_name}.{runner_conf.silver_schema}"
+                    ),
+                    "silver_table": tbl,
+                    "silver_transformation_json_prod": (
+                        f"{vol}/conf/silver_transformations.json"
+                    ),
+                    "silver_apply_changes_from_snapshot": LFC_DTIX_SILVER_APPLY_CHANGES_FROM_SNAPSHOT,
+                }
+            else:
+                entry = {
+                    "data_flow_id": str(i + 1),
+                    "data_flow_group": "A1",
+                    "source_format": "delta",
+                    "source_details": {
+                        "source_catalog_prod": runner_conf.uc_catalog_name,
+                        "source_database": runner_conf.lfc_schema,
+                        "source_table": tbl,
+                    },
+                    "bronze_database_prod": (
+                        f"{runner_conf.uc_catalog_name}.{runner_conf.bronze_schema}"
+                    ),
+                    "bronze_table": tbl,
+                    "bronze_reader_options": LFC_TABLE_BRONZE_READER_OPTIONS.get(tbl, {}),
+                    "bronze_database_quarantine_prod": (
+                        f"{runner_conf.uc_catalog_name}.{runner_conf.bronze_schema}"
+                    ),
+                    "bronze_quarantine_table": f"{tbl}_quarantine",
+                    "silver_database_prod": (
+                        f"{runner_conf.uc_catalog_name}.{runner_conf.silver_schema}"
+                    ),
+                    "silver_table": tbl,
+                    "silver_transformation_json_prod": (
+                        f"{vol}/conf/silver_transformations.json"
+                    ),
+                    "silver_data_quality_expectations_json_prod": (
+                        f"{vol}/conf/dqe/silver_dqe.json"
+                    ),
+                    "bronze_cdc_apply_changes": LFC_INTPK_BRONZE_CDC_APPLY_CHANGES,
+                    "bronze_data_quality_expectations_json_prod": (
+                        f"{vol}/conf/dqe/bronze_dqe.json"
+                    ),
+                }
                 silver_seq = "pk" if runner_conf.sequence_by_pk else "dt"
                 entry["silver_cdc_apply_changes"] = {
                     **LFC_INTPK_SILVER_CDC_APPLY_CHANGES,
                     "sequence_by": silver_seq,
                 }
-                # silver DQE already set above; pipeline uses DQE-then-CDC path for intpk
-            else:
-                # dtix: SCD Type 2 with readChangeFeed + CDC so __END_AT is accurate in bronze/silver
-                entry["bronze_cdc_apply_changes"] = LFC_DTIX_BRONZE_CDC_APPLY_CHANGES
-                entry["bronze_data_quality_expectations_json_prod"] = (
-                    f"{vol}/conf/dqe/bronze_dqe.json"
-                )
-                entry["silver_cdc_apply_changes"] = LFC_DTIX_SILVER_CDC_APPLY_CHANGES
             onboarding.append(entry)
 
         # Pass-through: select all columns as-is
@@ -364,7 +409,7 @@ class DLTMETALFCDemo(DLTMETARunner):
 
     def _upload_init_and_lfc_notebooks(self, runner_conf: LFCRunnerConf) -> str:
         """
-        Upload init_dlt_meta_pipeline.py, wait_for_lfc_pipelines.py, and
+        Upload init_sdp_meta_pipeline.py, trigger_ingestion_and_wait.py, and
         lfcdemo-database.ipynb to the Databricks workspace.
         Returns the workspace path of the uploaded LFC notebook (without extension).
         """
@@ -374,7 +419,7 @@ class DLTMETALFCDemo(DLTMETARunner):
         self.ws.workspace.mkdirs(f"{runner_conf.runners_nb_path}/runners")
 
         for nb_file in (
-            "demo/notebooks/lfc_runners/init_dlt_meta_pipeline.py",
+            "demo/notebooks/lfc_runners/init_sdp_meta_pipeline.py",
             "demo/notebooks/lfc_runners/trigger_ingestion_and_wait.py",
         ):
             nb_name = nb_file.split("/")[-1]
@@ -401,30 +446,39 @@ class DLTMETALFCDemo(DLTMETARunner):
         return lfc_nb_ws_path
 
     def _upload_trigger_ingestion_notebook(self, runner_conf: LFCRunnerConf):
-        """Ensure trigger_ingestion_and_wait.py exists in the run's workspace (for incremental job)."""
+        """Re-upload trigger_ingestion_and_wait.py and init_sdp_meta_pipeline.py for incremental runs.
+
+        Both notebooks are re-uploaded on every incremental so local fixes are picked up without
+        requiring a full teardown and re-setup of the run.
+        """
         from databricks.sdk.service.workspace import Language
-        path = f"{runner_conf.runners_nb_path}/runners/trigger_ingestion_and_wait.py"
         self.ws.workspace.mkdirs(f"{runner_conf.runners_nb_path}/runners")
-        with open("demo/notebooks/lfc_runners/trigger_ingestion_and_wait.py", "rb") as f:
-            self.ws.workspace.upload(
-                path=path,
-                format=ImportFormat.SOURCE,
-                language=Language.PYTHON,
-                content=f.read(),
-                overwrite=True,
-            )
-        print(f"  Uploaded trigger_ingestion_and_wait.py for incremental run.")
+        for nb_file in [
+            "demo/notebooks/lfc_runners/trigger_ingestion_and_wait.py",
+            "demo/notebooks/lfc_runners/init_sdp_meta_pipeline.py",
+        ]:
+            nb_name = os.path.splitext(os.path.basename(nb_file))[0]
+            path = f"{runner_conf.runners_nb_path}/runners/{nb_name}"
+            with open(nb_file, "rb") as f:
+                self.ws.workspace.upload(
+                    path=path,
+                    format=ImportFormat.SOURCE,
+                    language=Language.PYTHON,
+                    content=f.read(),
+                    overwrite=True,
+                )
+            print(f"  Uploaded {nb_name} for incremental run.")
 
     def create_bronze_silver_dlt(self, runner_conf: LFCRunnerConf):
-        runner_conf.bronze_pipeline_id = self.create_dlt_meta_pipeline(
-            f"dlt-meta-lfc-bronze-{runner_conf.run_id}",
+        runner_conf.bronze_pipeline_id = self.create_sdp_meta_pipeline(
+            f"{_DEMO_SLUG}-bronze-{runner_conf.run_id}",
             "bronze",
             "A1",
             runner_conf.bronze_schema,
             runner_conf,
         )
-        runner_conf.silver_pipeline_id = self.create_dlt_meta_pipeline(
-            f"dlt-meta-lfc-silver-{runner_conf.run_id}",
+        runner_conf.silver_pipeline_id = self.create_sdp_meta_pipeline(
+            f"{_DEMO_SLUG}-silver-{runner_conf.run_id}",
             "silver",
             "A1",
             runner_conf.silver_schema,
@@ -470,7 +524,7 @@ class DLTMETALFCDemo(DLTMETARunner):
         then bronze_dlt → silver_dlt.
         """
         self._upload_trigger_ingestion_notebook(runner_conf)
-        incr_job_name = f"dlt-meta-lfc-demo-incremental-{runner_conf.run_id}"
+        incr_job_name = f"{_DEMO_SLUG}-demo-incremental-{runner_conf.run_id}"
         existing_job = next(
             (
                 j
@@ -508,7 +562,7 @@ class DLTMETALFCDemo(DLTMETARunner):
         oid = self.ws.get_workspace_id()
         vol_url = (
             f"{self.ws.config.host}/explore/data/volumes/"
-            f"{runner_conf.uc_catalog_name}/{runner_conf.dlt_meta_schema}/{runner_conf.uc_volume_name}"
+            f"{runner_conf.uc_catalog_name}/{runner_conf.sdp_meta_schema}/{runner_conf.uc_volume_name}"
             f"?o={oid}"
         )
         ws_url = f"{self.ws.config.host}/#workspace/Workspace{runner_conf.runners_nb_path}"
@@ -544,12 +598,12 @@ class DLTMETALFCDemo(DLTMETARunner):
                 max_retries=0,
                 timeout_seconds=0,
                 python_wheel_task=jobs.PythonWheelTask(
-                    package_name="dlt_meta",
+                    package_name="databricks_labs_sdp_meta",
                     entry_point="run",
                     named_parameters={
                         "onboard_layer":             "bronze_silver",
                         "database":                  (
-                            f"{runner_conf.uc_catalog_name}.{runner_conf.dlt_meta_schema}"
+                            f"{runner_conf.uc_catalog_name}.{runner_conf.sdp_meta_schema}"
                         ),
                         "onboarding_file_path":      (
                             f"{runner_conf.uc_volume_path}conf/onboarding.json"
@@ -562,7 +616,7 @@ class DLTMETALFCDemo(DLTMETARunner):
                         "bronze_dataflowspec_path":  (
                             f"{runner_conf.uc_volume_path}data/dlt_spec/bronze"
                         ),
-                        "import_author":             "dlt-meta-lfc",
+                        "import_author":             _DEMO_SLUG,
                         "version":                   "v1",
                         "overwrite":                 "True",
                         "env":                       runner_conf.env,
@@ -600,7 +654,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             )
         ]
         created = self.ws.jobs.create(
-            name=f"dlt-meta-lfc-demo-{runner_conf.run_id}-downstream",
+            name=f"{_DEMO_SLUG}-demo-{runner_conf.run_id}-downstream",
             environments=dltmeta_environments,
             tasks=self._downstream_tasks(runner_conf),
         )
@@ -659,12 +713,12 @@ class DLTMETALFCDemo(DLTMETARunner):
                 max_retries=0,
                 timeout_seconds=0,
                 python_wheel_task=jobs.PythonWheelTask(
-                    package_name="dlt_meta",
+                    package_name="databricks_labs_sdp_meta",
                     entry_point="run",
                     named_parameters={
                         "onboard_layer":             "bronze_silver",
                         "database":                  (
-                            f"{runner_conf.uc_catalog_name}.{runner_conf.dlt_meta_schema}"
+                            f"{runner_conf.uc_catalog_name}.{runner_conf.sdp_meta_schema}"
                         ),
                         "onboarding_file_path":      (
                             f"{runner_conf.uc_volume_path}conf/onboarding.json"
@@ -677,7 +731,7 @@ class DLTMETALFCDemo(DLTMETARunner):
                         "bronze_dataflowspec_path":  (
                             f"{runner_conf.uc_volume_path}data/dlt_spec/bronze"
                         ),
-                        "import_author":             "dlt-meta-lfc",
+                        "import_author":             _DEMO_SLUG,
                         "version":                   "v1",
                         "overwrite":                 "True",
                         "env":                       runner_conf.env,
@@ -707,7 +761,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             ]
 
         created = self.ws.jobs.create(
-            name=f"dlt-meta-lfc-demo-{runner_conf.run_id}",
+            name=f"{_DEMO_SLUG}-demo-{runner_conf.run_id}",
             environments=dltmeta_environments,
             tasks=tasks,
         )
@@ -753,7 +807,7 @@ class DLTMETALFCDemo(DLTMETARunner):
             ),
         ]
         created = self.ws.jobs.create(
-            name=f"dlt-meta-lfc-demo-incremental-{runner_conf.run_id}",
+            name=f"{_DEMO_SLUG}-demo-incremental-{runner_conf.run_id}",
             tasks=tasks,
         )
         self._job_set_no_retry(created.job_id)

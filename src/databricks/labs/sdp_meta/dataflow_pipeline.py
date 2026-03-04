@@ -269,7 +269,8 @@ class DataflowPipeline:
             bronze_spec = self.dataflowSpec
             # Handle snapshot format for bronze
             if bronze_spec.sourceFormat and bronze_spec.sourceFormat.lower() == "snapshot":
-                if self.next_snapshot_and_version:
+                # https://github.com/databrickslabs/dlt-meta/issues/266
+                if self.next_snapshot_and_version or self.next_snapshot_and_version_from_source_view:
                     self.apply_changes_from_snapshot()
                 else:
                     raise Exception("Snapshot reader function not provided!")

@@ -29,7 +29,7 @@ if _trigger == "0":
 # COMMAND ----------
 
 _path = (
-    f"/Volumes/{_catalog}/dlt_meta_dataflowspecs_lfc_{_run_id}"
+    f"/Volumes/{_catalog}/sdp_meta_dataflowspecs_lfc_{_run_id}"
     f"/{_catalog}_lfc_volume_{_run_id}/conf/lfc_created.json"
 )
 try:

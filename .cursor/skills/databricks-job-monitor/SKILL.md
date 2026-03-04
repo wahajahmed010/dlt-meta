@@ -5,6 +5,108 @@ description: Monitor Databricks job runs and DLT pipeline status, and clean up a
 
 # Databricks Job & Pipeline Monitor
 
+## Domain knowledge: LFC, SDP Meta, SCD Types, and column formats
+
+### Lakeflow Connect (LFC)
+
+LFC streams changes from an external source database (SQL Server, PostgreSQL, MySQL) into
+Databricks **streaming tables** in Unity Catalog. Per source it creates two DLT pipelines:
+
+| Pipeline | Name suffix | Role |
+|----------|------------|------|
+| Gateway | `*_gw` | Connects to source DB and captures change log |
+| Ingestion | `*_ig` | Writes changes into UC streaming tables |
+
+The demo streams two source tables: **`intpk`** (SCD Type 1) and **`dtix`** (SCD Type 2).
+
+### SDP Meta (formerly DLT-Meta)
+
+`databricks.labs.sdp_meta` is the metadata-driven framework that reads `onboarding.json` and
+drives DLT pipelines. It creates:
+
+| Pipeline | Name pattern |
+|----------|-------------|
+| Bronze | `sdp-meta-lfc-bronze-{run_id}` |
+| Silver | `sdp-meta-lfc-silver-{run_id}` |
+
+Bronze reads the LFC streaming tables via Change Data Feed (`readChangeFeed: true`) and applies
+CDC via `bronze_cdc_apply_changes`. Silver applies pass-through transformations (`select *`).
+
+### SCD Type 1 — `intpk`
+
+LFC writes **SCD Type 1** for `intpk` (source primary key: `pk`):
+
+- One row per `pk` in the streaming table — always the current state.
+- Changes arrive as INSERT / UPDATE / DELETE in the Change Data Feed.
+- No history columns (`__start_at` / `__end_at` are absent).
+
+DLT-Meta CDC config:
+
+| Layer | `keys` | `scd_type` | `sequence_by` |
+|-------|--------|------------|---------------|
+| Bronze | `["pk"]` | `"1"` | `"_commit_version"` |
+| Silver | `["pk"]` | `"1"` | `"dt"` |
+
+### SCD Type 2 — `dtix`
+
+LFC writes **SCD Type 2** for `dtix` (index on `dt`; treated as no-PK by LFC since the source
+has no explicit primary key). The streaming table holds full row history:
+
+- Multiple rows per `dt` value — one per version.
+- Active version: `__end_at = NULL`. Closed version: `__end_at` is set.
+- When a source row changes, LFC performs:
+  1. **UPDATE** old row → sets `__end_at` from `NULL` → struct value (closes version).
+  2. **INSERT** new row → `__start_at` = new struct value, `__end_at = NULL` (opens version).
+
+Because the LFC streaming table **already has** `__start_at` / `__end_at`, DLT-Meta must use
+`scd_type: "1"` — **not** `"2"`. Using `scd_type: "2"` causes:
+
+```
+DLTAnalysisException: Please rename the following system reserved columns
+in your source: __START_AT, __END_AT.
+```
+
+DLT-Meta CDC config:
+
+| Layer | `keys` | `scd_type` | `sequence_by` |
+|-------|--------|------------|---------------|
+| Bronze | `["dt", "__start_at"]` | `"1"` | `"_commit_version"` |
+| Silver | `["dt", "__start_at"]` | `"1"` | `"__start_at"` |
+
+`"dt"` is the logical business key; `"__start_at"` distinguishes row-versions.
+`sequence_by = "_commit_version"` (bronze): never NULL from CDF; the UPDATE that closes a version
+always has a higher commit version than the original INSERT, so the final `__end_at` value wins.
+`sequence_by = "__start_at"` (silver): always non-null; lexicographically monotone per version.
+
+### `__start_at` / `__end_at` — struct type, not a timestamp
+
+Both columns are **structs** with two sub-fields:
+
+| Sub-field | Type | Example |
+|-----------|------|---------|
+| `__cdc_internal_value` | string | `"0000132800003360000D-00001328000033600002-00000000000000000001"` |
+| `__cdc_timestamp_value` | string (ISO-8601) | `"2026-03-04T01:06:41.787Z"` |
+
+Sample closed row in the `dtix` LFC streaming table (both fields populated):
+
+```
+__start_at = {
+  __cdc_internal_value:  "0000132800003360000D-00001328000033600002-00000000000000000001",
+  __cdc_timestamp_value: "2026-03-04T01:06:41.787Z"
+}
+__end_at = {
+  __cdc_internal_value:  "00001328000033500013-00001328000033500011-00000000000000000010",
+  __cdc_timestamp_value: "2026-03-04T01:06:41.363Z"
+}
+```
+
+Active rows have `__end_at = NULL`. To filter for active rows: `WHERE __end_at IS NULL`.
+
+`__cdc_internal_value` encodes a commit position and is lexicographically monotone — newer
+row-versions always compare greater, making struct-level comparison safe for `sequence_by`.
+
+---
+
 ## Extracting identifiers from terminal output
 
 When reading terminal output from `launch_techsummit_demo.py` or `launch_lfc_demo.py`, look for:
@@ -24,10 +126,10 @@ Job created successfully. job_id=<JOB_ID>, url=<URL>
 ### LFC demo — name patterns
 
 DLT-Meta pipelines (created by `launch_lfc_demo.py`):
-- Setup job: `dlt-meta-lfc-demo-{run_id}`
-- Incremental job: `dlt-meta-lfc-demo-incremental-{run_id}`
-- Bronze pipeline: `dlt-meta-lfc-bronze-{run_id}`
-- Silver pipeline: `dlt-meta-lfc-silver-{run_id}`
+- Setup job: `sdp-meta-lfc-demo-{run_id}`
+- Incremental job: `sdp-meta-lfc-demo-incremental-{run_id}`
+- Bronze pipeline: `sdp-meta-lfc-bronze-{run_id}`
+- Silver pipeline: `sdp-meta-lfc-silver-{run_id}`
 
 **Lakeflow Connect pipelines** (created *inside* `lfcdemo-database.ipynb` via `lfcdemolib`):
 
@@ -57,7 +159,7 @@ To look up these pipelines by ID, read them directly from the `lfc_setup` task o
 
 **Bronze pipeline source schema (LFC demo):** The bronze DLT pipeline reads the LFC streaming tables (`intpk`, `dtix`) from the **schema created by `lfcdemo-database.ipynb`** (i.e. `d.target_schema`, e.g. `robert_lee_sqlserver_4207c5e3d`), **not** from the `source_schema` (source DB schema) / launcher's `lfc_schema` (e.g. `lfcddemo`) passed to `launch_lfc_demo.py`. The launcher writes an initial `onboarding.json` with `source_database: lfc_schema`; the notebook **overwrites** `conf/onboarding.json` on the run's volume with `source_database: d.target_schema` so that `onboarding_job` and the bronze pipeline use the correct schema. If the bronze pipeline fails with "Failed to resolve flow" or "Failed to analyze flow" for flows like `main_dlt_meta_bronze_lfc_{run_id}_intpk_bronze_inputview`, the usual cause is that the **source** tables are missing from the schema in `onboarding.json` — e.g. the file was not overwritten by the notebook (notebook failed before the write, or `run_id`/`target_catalog` not passed), or an older run used a different schema. Confirm that `conf/onboarding.json` on the run's volume has `source_database` equal to the LFC-created schema name (from `conf/lfc_created.json` → `lfc_schema`).
 
-**Storing job IDs for efficient lookup (LFC demo):** To avoid slow `jobs.list(name=...)` over the whole workspace, `launch_lfc_demo.py` stores setup and incremental job IDs in a workspace file and uses `jobs.get(job_id=...)` when possible. At **setup**, after creating the main job it writes `conf/setup_metadata.json` under the run's workspace path (`/Users/{user}/dlt_meta_lfc_demo/{run_id}/conf/setup_metadata.json`) with `job_id` and `uc_catalog_name`. On **incremental** runs it first tries to read that file; if `job_id` is present it calls `jobs.get(job_id=meta["job_id"])` (fast) instead of `jobs.list(name=..., limit=100)`. When the incremental job is created for the first time, the launcher writes the same file with `incremental_job_id` added; subsequent incremental runs then use `jobs.get(job_id=meta["incremental_job_id"])` and skip listing. For monitoring or scripts: **prefer reading `conf/setup_metadata.json` and using `jobs.get(job_id=...)`** when you have a run_id and the workspace path; fall back to `jobs.list(name=..., limit=JOBS_LIST_LIMIT)` only if the file is missing (e.g. runs from before this feature).
+**Storing job IDs for efficient lookup (LFC demo):** To avoid slow `jobs.list(name=...)` over the whole workspace, `launch_lfc_demo.py` stores setup and incremental job IDs in a workspace file and uses `jobs.get(job_id=...)` when possible. At **setup**, after creating the main job it writes `conf/setup_metadata.json` under the run's workspace path (`/Users/{user}/sdp_meta_lfc_demo/{run_id}/conf/setup_metadata.json`) with `job_id` and `uc_catalog_name`. On **incremental** runs it first tries to read that file; if `job_id` is present it calls `jobs.get(job_id=meta["job_id"])` (fast) instead of `jobs.list(name=..., limit=100)`. When the incremental job is created for the first time, the launcher writes the same file with `incremental_job_id` added; subsequent incremental runs then use `jobs.get(job_id=meta["incremental_job_id"])` and skip listing. For monitoring or scripts: **prefer reading `conf/setup_metadata.json` and using `jobs.get(job_id=...)`** when you have a run_id and the workspace path; fall back to `jobs.list(name=..., limit=JOBS_LIST_LIMIT)` only if the file is missing (e.g. runs from before this feature).
 
 > **LFC notebook scheduler:** The notebook schedules auto-cleanup of LFC pipelines after 1 hour (configurable via `wait_sec`, default 3600 s). This scheduled job runs independently in Databricks. The DML loop against the source database (10 inserts/updates/deletes per table per minute) **stops when the notebook session ends**, but the LFC ingestion pipeline itself continues running independently until the cleanup job deletes it.
 
@@ -127,7 +229,7 @@ RUN_ID = "<run_id>"
 # ── Techsummit / LFC DLT-Meta job ─────────────────────────────────────────────
 # Prefer job_id when available (fast). LFC demo stores IDs in workspace conf/setup_metadata.json.
 USERNAME = ws.current_user.me().user_name
-runners_path = f"/Users/{USERNAME}/dlt_meta_lfc_demo/{RUN_ID}"
+runners_path = f"/Users/{USERNAME}/sdp_meta_lfc_demo/{RUN_ID}"
 setup_meta_path = f"{runners_path}/conf/setup_metadata.json"
 job = None
 try:
@@ -141,7 +243,7 @@ try:
 except Exception:
     pass
 if not job:
-    job_name = f"dlt-meta-techsummit-demo-{RUN_ID}"  # or dlt-meta-lfc-demo-{RUN_ID}
+    job_name = f"dlt-meta-techsummit-demo-{RUN_ID}"  # or sdp-meta-lfc-demo-{RUN_ID}
     job = next((j for j in ws.jobs.list(name=job_name, limit=100) if j.settings.name == job_name), None)
 
 # Job runs (limit=1 for latest)
@@ -364,7 +466,7 @@ When running **incremental** (`launch_lfc_demo.py --run_id=...`), the first task
 
 1. **Confirm the job is missing:** `databricks jobs get <JOB_ID> --profile=PROFILE` → if you get "does not exist" or 404, the job was deleted.
 2. **Confirm what’s on the volume:** The trigger task reads  
-   `/Volumes/<catalog>/dlt_meta_dataflowspecs_lfc_<run_id>/<catalog>_lfc_volume_<run_id>/conf/lfc_created.json`.  
+   `/Volumes/<catalog>/sdp_meta_dataflowspecs_lfc_<run_id>/<catalog>_lfc_volume_<run_id>/conf/lfc_created.json`.  
    It should contain `ig_pipeline_id` and `lfc_scheduler_job_id`. If `lfc_scheduler_job_id` points to a deleted job, that’s the cause.
 
 **Fix (code):** `trigger_ingestion_and_wait.py` now catches "job does not exist"–style errors and **falls back** to `pipelines.start_update(pipeline_id=ig_pipeline_id)` so the ingestion pipeline is triggered directly and the incremental run can proceed. Redeploy/upload the updated notebook so the incremental job uses it.
@@ -377,11 +479,369 @@ Use run and job APIs to trace which notebook/job created a given job or pipeline
 
 **1. From a run_id, get run metadata.** Run metadata often persists even after the job is deleted: `databricks jobs get-run <RUN_ID> --profile=PROFILE -o json`. From the response: **job_id** (parent job; may be deleted), **run_name** (e.g. LFC scheduler jobs use `{user}_{source}_{id}_ig_{pipeline_id}`), **tasks[]** with `task_key`, `pipeline_task.pipeline_id`, or `notebook_task.notebook_path`.
 
-**2. If the job is deleted**, `jobs get JOB_ID` fails. Use the **run** to infer creator: **run_name** like `robert_lee_sqlserver_42086316e_ig_809c9648-872b-4402-bf15-48516b23dad3` → LFC **ingestion scheduler job**, created by **lfcdemo-database.ipynb** (lfc_setup task), in the cell that calls `d.jobs_create(ig_job_spec)`; single task `run_dlt` with `pipeline_task.pipeline_id` = ingestion pipeline. **run_name** `dlt-meta-lfc-demo-{run_id}` → created by **launch_lfc_demo.py**.
+**2. If the job is deleted**, `jobs get JOB_ID` fails. Use the **run** to infer creator: **run_name** like `robert_lee_sqlserver_42086316e_ig_809c9648-872b-4402-bf15-48516b23dad3` → LFC **ingestion scheduler job**, created by **lfcdemo-database.ipynb** (lfc_setup task), in the cell that calls `d.jobs_create(ig_job_spec)`; single task `run_dlt` with `pipeline_task.pipeline_id` = ingestion pipeline. **run_name** `sdp-meta-lfc-demo-{run_id}` → created by **launch_lfc_demo.py**.
 
 **3. Example: job 893133786814806, run 327800737236822** — `jobs get 893133786814806` → Job does not exist. `jobs get-run 327800737236822` → run_name `robert_lee_sqlserver_42086316e_ig_809c9648-...`, one task `run_dlt`, pipeline_id `809c9648-872b-4402-bf15-48516b23dad3`. So this job was the **LFC scheduler job** for ingestion pipeline 809c9648..., **created by lfcdemo-database.ipynb**; its job_id was written to `conf/lfc_created.json` as `lfc_scheduler_job_id`.
 
 **4. LFC demo dependency graph:** Setup job → **lfc_setup** (lfcdemo-database.ipynb) → creates gateway + ingestion pipelines and **LFC scheduler job** (name `{user}_{source}_{id}_ig_{pipeline_id}`), writes **lfc_created.json** and overwrites onboarding.json → onboarding_job → bronze_dlt, silver_dlt. Incremental job → **trigger task** reads lfc_created.json, calls run_now(scheduler job) or start_update(ig_pipeline_id) → bronze_dlt → silver_dlt.
+
+---
+
+## AI-initiated test cycle: launch → monitor → fix → re-launch
+
+This section documents the full workflow for launching, troubleshooting, fixing, and re-launching
+the LFC demo from the AI agent. **Always work in `dlt-meta-lfc/` with `.venv_3_11` activated.**
+
+### Prerequisites
+
+```bash
+cd /Users/robert.lee/github/dlt-meta-lfc
+source .venv_3_11/bin/activate
+```
+
+Always set `PYTHONPATH` when calling the launcher directly:
+
+```bash
+PYTHONPATH="$(pwd):$(pwd)/src" python demo/launch_lfc_demo.py \
+  --uc_catalog_name=main \
+  --connection_name=lfcddemo-azure-sqlserver \
+  --cdc_qbc=cdc \
+  --trigger_interval_min=5 \
+  --profile=e2demofe \
+  --sequence_by_pk
+```
+
+The launcher prints a `run_id` at the end — save it for all subsequent monitoring, incremental
+runs, and cleanup.
+
+### Monitoring after launch
+
+After a successful launch, two jobs run in sequence:
+
+| Job | Purpose | How to find |
+|-----|---------|-------------|
+| Job 1 (setup) | Runs `lfcdemo-database.ipynb` — creates LFC pipelines, waits for tables | `Job` URL printed by launcher |
+| Job 2 (downstream) | `onboarding_job` → `bronze_dlt` → `silver_dlt` | `Downstream` URL printed by launcher |
+
+Job 1 (setup) takes **~1 hour**; it triggers Job 2 automatically when it succeeds.
+Job 2 (downstream) takes **~10 min** depending on data volume.
+**Always monitor task-by-task** — don't poll only the top-level job state.
+Extract `SETUP_JOB_ID` and `DOWNSTREAM_JOB_ID` from the launcher's `Job :` and `Downstream:` output lines.
+Run the incremental only after Job 2 shows `SUCCESS`.
+
+**Poll loop (recommended):**
+
+```python
+import sys, os, time
+sys.path.insert(0, os.path.join(os.getcwd(), "src"))
+from integration_tests.run_integration_tests import get_workspace_api_client
+
+ws = get_workspace_api_client("e2demofe")
+DOWNSTREAM_JOB_ID = <downstream_job_id>   # from launcher output
+
+for attempt in range(25):
+    time.sleep(60)
+    runs = list(ws.jobs.list_runs(job_id=DOWNSTREAM_JOB_ID, limit=1))
+    if not runs:
+        print(f"{attempt+1}m: Job2 not triggered yet"); continue
+    run = runs[0]; full = ws.jobs.get_run(run_id=run.run_id)
+    for t in (full.tasks or []):
+        print(f"  {t.task_key:25s}  {t.state.life_cycle_state}  {t.state.result_state or '—'}")
+    bronze_task = next((t for t in (full.tasks or []) if 'bronze' in t.task_key and t.pipeline_task), None)
+    if bronze_task:
+        pid = bronze_task.pipeline_task.pipeline_id
+        events = list(ws.pipelines.list_pipeline_events(pipeline_id=pid, max_results=30))
+        errors = [e for e in events if "ERROR" in str(e.level or "").upper()]
+        p = ws.pipelines.get(pipeline_id=pid)
+        latest = p.latest_updates[0] if p.latest_updates else None
+        print(f"  Bronze: {p.state}  {latest.state if latest else 'none'}")
+        if errors:
+            for e in errors[:1]:
+                for ex in (e.as_dict() or {}).get('error', {}).get('exceptions', []):
+                    print(f"  ERROR: {ex.get('class_name')}: {ex.get('message','')[:500]}")
+            break
+        if latest and str(latest.state) == "UpdateStateInfoState.COMPLETED":
+            print("Bronze COMPLETED"); break
+    if str(run.state.life_cycle_state) == "RunLifeCycleState.TERMINATED":
+        print(f"Job2 finished: {run.state.result_state}"); break
+```
+
+### Error diagnosis playbook
+
+**Always check the full exception from `list_pipeline_events`, not just the summary event.**
+
+| Error | Root cause | Fix |
+|-------|-----------|-----|
+| `Snapshot reader function not provided!` | Wheel is old — cluster cached a Python env from a prior `0.0.11` build | Bump wheel version, rebuild, relaunch |
+| `from src.dataflow_pipeline import DataflowPipeline` fails | `init_sdp_meta_pipeline.py` used old flat import; `build/lib/src/` artifact contaminated wheel | Change import to `from databricks.labs.sdp_meta.dataflow_pipeline import DataflowPipeline` |
+| `UNRESOLVED_COLUMN __START_AT` in `apply_changes_from_snapshot` | DLT globally strips `__START_AT`/`__END_AT` (reserved) before resolving keys | Add `bronze_custom_transform` in `init_sdp_meta_pipeline.py` to rename to `lfc_start_at`/`lfc_end_at`; update keys |
+| `DLTAnalysisException: system reserved columns __START_AT, __END_AT` | Same reservation, triggered by CDF-based `apply_changes` | Switch `dtix` to `source_format: snapshot` + `apply_changes_from_snapshot` |
+| `[SCHEMA_NOT_FOUND]` or `Schema '...' does not exist` | Run ID schema was cleaned up (or old run_id reused) | Always do a fresh launch; don't reuse a cleaned run_id |
+| `AttributeError: 'bytes' object has no attribute 'seekable'` | `ws.files.upload(contents=bytes)` — must wrap in `io.BytesIO` | Use `io.BytesIO(data)` |
+| `DUPLICATE_KEY_VIOLATION` — 9 rows for key `{"dt":"...","lfc_start_at":"{null, null}"}` | No-PK source table has multiple rows with same `dt` and null `__START_AT`; key `(dt, lfc_start_at)` is non-unique | Change key to `["dt", "lfc_end_at"]` — LFC's `__END_AT` is always unique per row (unique `__cdc_internal_value`). Verify: `COUNT(*) == COUNT(DISTINCT struct(dt, __END_AT))` in source |
+| `FileNotFoundError: Cannot read /Volumes/main/dlt_meta_dataflowspecs_lfc_...` | `trigger_ingestion_and_wait.py` uses stale `dlt_meta_` prefix | Line 32: change `dlt_meta_dataflowspecs_lfc_` → `sdp_meta_dataflowspecs_lfc_` |
+
+### Checking what's in the deployed wheel
+
+When the DLT pipeline uses the wrong code, verify the wheel that was uploaded:
+
+```python
+import zipfile
+
+whl = "dist/databricks_labs_sdp_meta-0.0.12-py3-none-any.whl"
+
+with zipfile.ZipFile(whl) as z:
+    # Check top-level structure (should only have 'databricks/')
+    from collections import Counter
+    tops = Counter(n.split('/')[0] for n in z.namelist() if 'dist-info' not in n)
+    for k, v in sorted(tops.items()):
+        print(f"  {k}/: {v} files")
+
+    # Verify our fix is in the wheel
+    dp = z.read('databricks/labs/sdp_meta/dataflow_pipeline.py').decode()
+    lines = dp.split('\n')
+    for i in range(269, 276):
+        print(f"{i+1}: {lines[i]}")
+```
+
+If the wheel contains `src/` alongside `databricks/`, there are **stale build artifacts**.
+Fix: delete `build/` before rebuilding.
+
+```bash
+rm -rf build/
+python -m build --wheel
+```
+
+### Wheel version bumping (force fresh cluster environment)
+
+Databricks caches Python environments by wheel **filename**. If you rebuild the wheel with the
+same version (e.g. `0.0.11`) the cluster reuses the cached env and your fix never runs.
+
+Always bump the version when deploying a code fix:
+
+```bash
+# src/databricks/labs/sdp_meta/__about__.py
+__version__ = '0.0.12'   # was 0.0.11
+
+# setup.py
+version="0.0.12",        # was 0.0.11
+```
+
+Then rebuild and relaunch. The new filename `databricks_labs_sdp_meta-0.0.12-py3-none-any.whl`
+forces Databricks to create a fresh Python environment with the corrected code.
+
+### Cleanup during AI-initiated testing
+
+**When a run has failed and the output is no longer needed, always clean up before re-launching.**
+Stale runs consume workspace resources and make it harder to correlate errors to a specific run.
+
+```bash
+# Clean up a specific failed run
+python demo/cleanup_lfc_demo.py --profile=e2demofe --run_id=<failed_run_id>
+```
+
+`cleanup_lfc_demo.py` deletes all objects created for that run:
+- Setup and incremental jobs
+- Bronze and silver DLT-Meta pipelines
+- UC schemas (`sdp_meta_dataflowspecs_lfc_*`, `sdp_meta_bronze_lfc_*`, `sdp_meta_silver_lfc_*`) and their volumes/tables
+- Workspace notebooks under `/Users/{user}/sdp_meta_lfc_demo/{run_id}/`
+
+To also clean up the LFC gateway/ingestion pipelines:
+
+```bash
+python demo/cleanup_lfc_demo.py --profile=e2demofe --run_id=<run_id> --include-all-lfc-pipelines
+```
+
+**Rule of thumb:** After every failed run that required a code fix, clean up the old run before
+launching again. Accumulating stale runs makes it hard to know which schema/table you're looking at.
+
+### Running the incremental test
+
+After a successful full run, verify the incremental path by re-triggering bronze/silver with
+the latest LFC data:
+
+```bash
+python demo/launch_lfc_demo.py --profile=e2demofe --run_id=<run_id>
+```
+
+For example, with run `7bc7086ff8324a33b0f16b6e7ed872a7`:
+
+```bash
+python demo/launch_lfc_demo.py --profile=e2demofe --run_id=7bc7086ff8324a33b0f16b6e7ed872a7
+```
+
+This:
+1. Creates (or reuses) an incremental job named `sdp-meta-lfc-demo-incremental-{run_id}`
+2. Triggers the LFC ingestion pipeline to ingest new rows from the source DB
+3. Waits for the ingestion pipeline update to `COMPLETED`
+4. Triggers bronze and silver DLT-Meta pipelines against the same run's schemas
+
+Monitor the incremental run the same way as the initial setup run, using `DOWNSTREAM_JOB_ID` from
+the incremental job output.
+
+**Verify incremental rows were written:**
+
+```python
+from integration_tests.run_integration_tests import get_workspace_api_client
+from databricks.sdk.service.sql import StatementState
+import time
+
+ws = get_workspace_api_client("e2demofe")
+wh_id = next(w for w in ws.warehouses.list() if str(w.state).endswith('RUNNING')).id
+RUN_ID = "7bc7086ff8324a33b0f16b6e7ed872a7"
+CATALOG = "main"
+
+def q(sql):
+    s = ws.statement_execution.execute_statement(statement=sql, warehouse_id=wh_id)
+    for _ in range(20):
+        r = ws.statement_execution.get_statement(s.statement_id)
+        if r.status.state in (StatementState.SUCCEEDED, StatementState.FAILED): break
+        time.sleep(2)
+    return r.result.data_array or [] if r.status.state == StatementState.SUCCEEDED else []
+
+for layer, schema in [
+    ('Bronze', f'sdp_meta_bronze_lfc_{RUN_ID}'),
+    ('Silver', f'sdp_meta_silver_lfc_{RUN_ID}'),
+]:
+    print(f'\n=== {layer} ===')
+    for tbl in ['intpk', 'dtix']:
+        rows = q(f'SELECT COUNT(*) FROM {CATALOG}.{schema}.{tbl}')
+        print(f'  {tbl}: {rows[0][0] if rows else "?"} rows')
+        # DESCRIBE HISTORY shows per-update write counts
+        for h in q(f'DESCRIBE HISTORY {CATALOG}.{schema}.{tbl} LIMIT 3'):
+            print(f'    v{h[0]}  op={h[4]}  metrics={h[12]}')
+```
+
+### Full fix-and-relaunch example (the session that produced this skill entry)
+
+The session that refined these patterns went through 3 successive errors before the pipeline ran
+clean. Here is the full trace so you can recognize the same pattern quickly:
+
+1. **First launch** (`run_id: c77bd542...`) — failed with
+   `Exception: Snapshot reader function not provided!` at `dataflow_pipeline.py:275`.  
+   **Cause:** The wheel was built while `build/lib/src/dataflow_pipeline.py` (stale artifact, OLD
+   code) existed; that artifact was packaged as `src/dataflow_pipeline.py` in the wheel alongside
+   the fixed `databricks/labs/sdp_meta/dataflow_pipeline.py`. The init notebook imported from
+   `src.dataflow_pipeline` (old flat path) → loaded unfixed code.  
+   **Fix:** (a) Deleted `build/`, (b) changed import in `init_sdp_meta_pipeline.py` from
+   `from src.dataflow_pipeline` → `from databricks.labs.sdp_meta.dataflow_pipeline`, (c) bumped
+   version to `0.0.12` to break the cluster env cache, (d) rebuilt wheel, cleaned up old run,
+   relaunched.
+
+2. **Second launch** (`run_id: 166b41513...`) — failed with
+   `UNRESOLVED_COLUMN __START_AT. Did you mean ['data', 'dt']`.  
+   **Cause:** `apply_changes_from_snapshot` reached the correct code path (bug fix worked!) but
+   DLT globally strips `__START_AT`/`__END_AT` from the snapshot view schema (they are system-
+   reserved names), making them invisible when resolving keys. The `['data', 'dt']` suggestion was
+   from a different/cached schema context.  
+   **Fix:** Added a `bronze_custom_transform` in `init_sdp_meta_pipeline.py` that renames
+   `__START_AT` → `lfc_start_at` and `__END_AT` → `lfc_end_at` for the `dtix` table. Updated
+   `LFC_DTIX_BRONZE_APPLY_CHANGES_FROM_SNAPSHOT` and silver counterpart keys to `["dt",
+   "lfc_start_at"]`. Cleaned up old run, relaunched.
+
+3. **Third launch** (`run_id: 7bc7086f...`) — **success**.  
+   Bronze and silver completed; tables have columns `dt`, `lfc_start_at` (struct), `lfc_end_at`
+   (struct).
+
+4. **Incremental run on `7bc7086f...`** — failed with two new errors:
+
+   a. `trigger_ingestion_and_wait.py` read `dlt_meta_dataflowspecs_lfc_...` (stale prefix).  
+      **Fix:** `trigger_ingestion_and_wait.py` line 32 → change `dlt_meta_` to `sdp_meta_`.  
+      Also: extended `_upload_trigger_ingestion_notebook` in `launch_lfc_demo.py` to also
+      re-upload `init_sdp_meta_pipeline.py` on every incremental so local fixes are picked up
+      without a full teardown.
+
+   b. `[APPLY_CHANGES_FROM_SNAPSHOT_ERROR.DUPLICATE_KEY_VIOLATION]` — 9 rows per key
+      `{"dt":"...","lfc_start_at":"{null, null}"}` in the internal materialization table.  
+      **Root cause:** The `dtix` SQL Server source has no primary key; multiple rows can have
+      the same `dt` value **and** a null `__START_AT` (initial-load rows LFC hasn't yet assigned
+      a CDC start timestamp to). Key `(dt, lfc_start_at)` is therefore non-unique.  
+      **Key insight:** LFC always assigns a unique `__END_AT.__cdc_internal_value` to every row,
+      including initial-load rows where `__START_AT` is null. Querying the source confirmed:
+      `COUNT(*) = COUNT(DISTINCT struct(dt, __END_AT))` — `(dt, __END_AT)` is globally unique
+      across all 1900 rows (both historical and currently-active).  
+      **Fix:** Change `apply_changes_from_snapshot` keys from `["dt", "lfc_start_at"]` to
+      `["dt", "lfc_end_at"]` in `launch_lfc_demo.py`, `lfcdemo-database.ipynb`, and patch the
+      live `onboarding.json` on the UC volume for the affected run.
+
+   c. Attempting `full_refresh_selection` to clear the corrupted internal materialization was
+      slow and ran into a `ResourceConflict` from the already-running failed update.  
+      **Decision:** Clean up the failed run entirely and start a fresh launch. This is faster
+      than waiting for selective full-refresh to complete on a pipeline with corrupted state.
+
+5. **Fourth launch** (`run_id: cb89a69bd30c43c29dbb433ecc6ec7fb`) — fresh start with fixed keys.  
+   The **setup job** (`sdp-meta-lfc-demo-cb89a69bd30c43c29dbb433ecc6ec7fb`) takes **~1 hour**
+   because `lfcdemo-database.ipynb` waits for LFC gateway/ingestion pipelines to finish their
+   initial full load. Once the setup job finishes it automatically triggers the downstream job.  
+   The **downstream job** (`sdp-meta-lfc-demo-cb89a69bd30c43c29dbb433ecc6ec7fb-downstream`)
+   runs `onboarding_job` → `bronze_dlt` → `silver_dlt` and takes **~10 min** depending on
+   data volume. Monitor task-by-task progress (see poll loop below) — don't just wait for
+   the whole job.  
+   Once downstream succeeds, run the incremental to validate the fixed `(dt, lfc_end_at)` key:
+   ```bash
+   python demo/launch_lfc_demo.py --profile=e2demofe --run_id=cb89a69bd30c43c29dbb433ecc6ec7fb
+   ```
+
+---
+
+### When to start fresh vs. attempting in-place repair
+
+| Situation | Recommended action |
+|-----------|-------------------|
+| Pipeline failed; `onboarding.json` key change needed | Patch volume JSON + `full_refresh_selection` on the pipeline **if** it's idle; otherwise clean up and relaunch |
+| Internal materialization has duplicate rows (corrupted state) | Always clean up and relaunch — `full_refresh_selection` with a conflicting active update is unreliable |
+| Any error involving stale `dlt_meta_` prefix paths | Check ALL notebook files; fix and re-upload. Use incremental launcher (it re-uploads both `trigger_ingestion_and_wait.py` and `init_sdp_meta_pipeline.py` every time) |
+| Fix is taking too long or blocked by `ResourceConflict` | `cleanup_lfc_demo.py` + fresh `launch_lfc_demo.py` — setup job ~1 hour, then downstream ~10 min |
+
+### Timing guide for the LFC demo
+
+| Phase | Approximate duration |
+|-------|---------------------|
+| `launch_lfc_demo.py` script itself (UC setup, uploads, job creation) | ~30 s |
+| **Setup job** `sdp-meta-lfc-demo-{run_id}` — `lfc_setup` task (LFC pipelines + initial full load) | **~1 hour** |
+| **Downstream job** `sdp-meta-lfc-demo-{run_id}-downstream` — `onboarding_job` → `bronze_dlt` → `silver_dlt` | **~10 min** (data-dependent) |
+| Incremental run (LFC trigger + bronze + silver) | ~5–8 min |
+
+**Do not wait for the setup job to finish before starting to monitor.** Poll each job's tasks
+individually as they progress — the downstream job starts automatically as soon as the setup job
+succeeds, so you can start watching for it well before the 1-hour mark.
+
+**Wait for the downstream job to succeed before running incremental.** Its name is
+`sdp-meta-lfc-demo-{run_id}-downstream`; its URL is printed by the launcher on the `Downstream:`
+line. Check task-level status, not just the overall job state:
+
+```python
+import sys, os, time
+sys.path.insert(0, os.path.join(os.getcwd(), "src"))
+from integration_tests.run_integration_tests import get_workspace_api_client
+
+ws = get_workspace_api_client("e2demofe")
+DOWNSTREAM_JOB_ID = 808917810045282   # from launcher "Downstream:" line
+RUN_ID = "cb89a69bd30c43c29dbb433ecc6ec7fb"
+
+_start = time.time()
+while True:
+    elapsed = int(time.time() - _start)
+    runs = list(ws.jobs.list_runs(job_id=DOWNSTREAM_JOB_ID, limit=1))
+    if not runs:
+        print(f"[{elapsed:>4}s] downstream not triggered yet"); time.sleep(60); continue
+    run = runs[0]
+    full = ws.jobs.get_run(run_id=run.run_id)
+    lc = str(run.state.life_cycle_state)
+    rr = str(run.state.result_state or "—")
+    print(f"\n[{elapsed:>4}s] downstream run={run.run_id}  {lc}/{rr}")
+    for t in (full.tasks or []):
+        ts = t.state
+        print(f"  {t.task_key:35s} {str(ts.life_cycle_state):25s} {str(ts.result_state or '—')}")
+    if "TERMINATED" in lc:
+        if "SUCCESS" in rr:
+            print("\nDownstream SUCCEEDED — ready to run incremental.")
+            print(f"  python demo/launch_lfc_demo.py --profile=e2demofe --run_id={RUN_ID}")
+        else:
+            print(f"\nDownstream FAILED: {rr} — check errors above.")
+        break
+    time.sleep(60)
+```
 
 ---
 
@@ -412,16 +872,16 @@ Every `launch_lfc_demo.py` setup run creates the following:
 
 | Object | Name / Path | Type |
 |--------|-------------|------|
-| UC Schema | `{catalog}.dlt_meta_dataflowspecs_lfc_{run_id}` | Unity Catalog schema |
-| UC Schema | `{catalog}.dlt_meta_bronze_lfc_{run_id}` | Unity Catalog schema |
-| UC Schema | `{catalog}.dlt_meta_silver_lfc_{run_id}` | Unity Catalog schema |
-| UC Volume | `{catalog}.dlt_meta_dataflowspecs_lfc_{run_id}.{catalog}_lfc_volume_{run_id}` | Managed volume |
+| UC Schema | `{catalog}.sdp_meta_dataflowspecs_lfc_{run_id}` | Unity Catalog schema |
+| UC Schema | `{catalog}.sdp_meta_bronze_lfc_{run_id}` | Unity Catalog schema |
+| UC Schema | `{catalog}.sdp_meta_silver_lfc_{run_id}` | Unity Catalog schema |
+| UC Volume | `{catalog}.sdp_meta_dataflowspecs_lfc_{run_id}.{catalog}_lfc_volume_{run_id}` | Managed volume |
 | UC Tables | all tables inside the bronze/silver schemas | Delta tables created by DLT |
-| DLT Pipeline | `dlt-meta-lfc-bronze-{run_id}` | Lakeflow Declarative Pipeline |
-| DLT Pipeline | `dlt-meta-lfc-silver-{run_id}` | Lakeflow Declarative Pipeline |
-| Job | `dlt-meta-lfc-demo-{run_id}` | Databricks job |
-| Job | `dlt-meta-lfc-demo-incremental-{run_id}` | Databricks job (created on first incremental run) |
-| Workspace notebooks | `/Users/{user}/dlt_meta_lfc_demo/{run_id}/` | Workspace directory |
+| DLT Pipeline | `sdp-meta-lfc-bronze-{run_id}` | Lakeflow Declarative Pipeline |
+| DLT Pipeline | `sdp-meta-lfc-silver-{run_id}` | Lakeflow Declarative Pipeline |
+| Job | `sdp-meta-lfc-demo-{run_id}` | Databricks job |
+| Job | `sdp-meta-lfc-demo-incremental-{run_id}` | Databricks job (created on first incremental run) |
+| Workspace notebooks | `/Users/{user}/sdp_meta_lfc_demo/{run_id}/` | Workspace directory |
 
 In addition, `lfcdemo-database.ipynb` (the `lfc_setup` task) creates **LFC-managed objects** that have their own lifecycle:
 
@@ -491,7 +951,7 @@ print("Cleanup complete.")
 
 #### LFC demo cleanup
 
-For **step 1 (delete jobs)**, prefer reading `job_id` and `incremental_job_id` from workspace `conf/setup_metadata.json` (path: `/Users/{user}/dlt_meta_lfc_demo/{run_id}/conf/setup_metadata.json`) and calling `jobs.get(job_id=...)` then `jobs.delete(job_id=...)` — no list. Fall back to `jobs.list(name=..., limit=100)` only if the file is missing. Pipeline IDs for step 2 come from the setup job's task definitions — no slow `list_pipelines()` scan needed. LFC schemas contain **gateway staging volumes** and sometimes **streaming tables not visible via `ws.tables.list`** — always use `DROP SCHEMA ... CASCADE` via SQL to be safe.
+For **step 1 (delete jobs)**, prefer reading `job_id` and `incremental_job_id` from workspace `conf/setup_metadata.json` (path: `/Users/{user}/sdp_meta_lfc_demo/{run_id}/conf/setup_metadata.json`) and calling `jobs.get(job_id=...)` then `jobs.delete(job_id=...)` — no list. Fall back to `jobs.list(name=..., limit=100)` only if the file is missing. Pipeline IDs for step 2 come from the setup job's task definitions — no slow `list_pipelines()` scan needed. LFC schemas contain **gateway staging volumes** and sometimes **streaming tables not visible via `ws.tables.list`** — always use `DROP SCHEMA ... CASCADE` via SQL to be safe.
 
 ```python
 from integration_tests.run_integration_tests import get_workspace_api_client
@@ -513,7 +973,7 @@ def sql(stmt):
     return r.status.state
 
 # 1. Delete DLT-Meta jobs (use exact name= filter — list() without filter is too slow)
-for jname in [f"dlt-meta-lfc-demo-{RUN_ID}", f"dlt-meta-lfc-demo-incremental-{RUN_ID}"]:
+for jname in [f"sdp-meta-lfc-demo-{RUN_ID}", f"sdp-meta-lfc-demo-incremental-{RUN_ID}"]:
     j = next((x for x in ws.jobs.list(name=jname) if x.settings.name == jname), None)
     if j:
         # Read pipeline IDs from job tasks before deleting the job
@@ -531,9 +991,9 @@ for jname in [f"dlt-meta-lfc-demo-{RUN_ID}", f"dlt-meta-lfc-demo-incremental-{RU
 
 # 3. Delete DLT-Meta UC schemas — volumes first, then tables, then schema
 for sname in [
-    f"dlt_meta_dataflowspecs_lfc_{RUN_ID}",
-    f"dlt_meta_bronze_lfc_{RUN_ID}",
-    f"dlt_meta_silver_lfc_{RUN_ID}",
+    f"sdp_meta_dataflowspecs_lfc_{RUN_ID}",
+    f"sdp_meta_bronze_lfc_{RUN_ID}",
+    f"sdp_meta_silver_lfc_{RUN_ID}",
 ]:
     s = next((x for x in ws.schemas.list(catalog_name=CATALOG) if x.name == sname), None)
     if s:
@@ -567,7 +1027,7 @@ for p in lfc_pipelines:
     ws.pipelines.delete(p.pipeline_id); print(f"  Deleted pipeline: {p.name}")
 
 # 6. Delete workspace directory
-nb_path = f"/Users/{USERNAME}/dlt_meta_lfc_demo/{RUN_ID}"
+nb_path = f"/Users/{USERNAME}/sdp_meta_lfc_demo/{RUN_ID}"
 try:
     ws.workspace.delete(nb_path, recursive=True)
     print(f"\nDeleted workspace directory: {nb_path}")

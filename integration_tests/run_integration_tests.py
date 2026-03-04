@@ -11,9 +11,11 @@ import webbrowser
 from dataclasses import dataclass
 from datetime import timedelta
 
-# Add project root to Python path
+# Add project root and src/ to Python path so the local sdp_meta package
+# resolves its own absolute imports (databricks.labs.sdp_meta.*) correctly.
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
+sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.join(project_root, "src"))
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service import compute, jobs

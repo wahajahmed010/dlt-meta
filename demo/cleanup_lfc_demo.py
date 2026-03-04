@@ -5,13 +5,13 @@ Usage:
   python demo/cleanup_lfc_demo.py --run_id=<run_id> --profile=<profile>
 
 Objects removed by run_id (always):
-  - Databricks jobs   : dlt-meta-lfc-demo-{run_id}
-                        dlt-meta-lfc-demo-incremental-{run_id}
+  - Databricks jobs   : sdp-meta-lfc-demo-{run_id}
+                        sdp-meta-lfc-demo-incremental-{run_id}
   - DLT pipelines     : bronze + silver (IDs read from job before deletion)
-  - UC schemas        : dlt_meta_dataflowspecs_lfc_{run_id}
-                        dlt_meta_bronze_lfc_{run_id}
-                        dlt_meta_silver_lfc_{run_id}
-  - Workspace dir     : /Users/{user}/dlt_meta_lfc_demo/{run_id}/
+  - UC schemas        : sdp_meta_dataflowspecs_lfc_{run_id}
+                        sdp_meta_bronze_lfc_{run_id}
+                        sdp_meta_silver_lfc_{run_id}
+  - Workspace dir     : /Users/{user}/sdp_meta_lfc_demo/{run_id}/
 
 LFC resources (run-scoped when possible):
   - The notebook writes conf/lfc_created.json to the volume with lfc_schema, pipeline IDs, scheduler job ID.
@@ -23,16 +23,28 @@ LFC resources (run-scoped when possible):
 The Unity Catalog itself (e.g. 'main') is NOT deleted.
 """
 
+import os
+import sys
+
+# Must happen before any databricks.* import so src/ is part of the
+# databricks namespace package when it is first loaded.
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _repo_root)
+sys.path.insert(0, os.path.join(_repo_root, "src"))
+
 import argparse
 import json
 import re
-import sys
 import time
 
 from databricks.sdk.service.sql import StatementState
-
-sys.path.insert(0, ".")
 from integration_tests.run_integration_tests import get_workspace_api_client
+
+
+# ── Name prefix ─────────────────────────────────────────────────────────────
+# Mirrors launch_lfc_demo.py — change here to rename all references at once.
+_DEMO_SLUG   = "sdp-meta-lfc"  # hyphenated  → job/pipeline names
+_DEMO_PREFIX = "sdp_meta"      # underscored → UC schema names, workspace paths
 
 
 def read_lfc_created(ws, catalog, run_id):
@@ -41,7 +53,7 @@ def read_lfc_created(ws, catalog, run_id):
     Returns dict with lfc_schema, gw_pipeline_id, ig_pipeline_id, lfc_scheduler_job_id, or None.
     """
     path = (
-        f"/Volumes/{catalog}/dlt_meta_dataflowspecs_lfc_{run_id}"
+        f"/Volumes/{catalog}/{_DEMO_PREFIX}_dataflowspecs_lfc_{run_id}"
         f"/{catalog}_lfc_volume_{run_id}/conf/lfc_created.json"
     )
     try:
@@ -100,9 +112,9 @@ def delete_jobs_and_pipelines(ws, run_id):
     """Delete DLT-Meta jobs, extracting pipeline IDs before the job is gone."""
     pipeline_ids = []
     for jname in [
-        f"dlt-meta-lfc-demo-{run_id}",
-        f"dlt-meta-lfc-demo-{run_id}-downstream",
-        f"dlt-meta-lfc-demo-incremental-{run_id}",
+        f"{_DEMO_SLUG}-demo-{run_id}",
+        f"{_DEMO_SLUG}-demo-{run_id}-downstream",
+        f"{_DEMO_SLUG}-demo-incremental-{run_id}",
     ]:
         j = next((x for x in ws.jobs.list(name=jname) if x.settings.name == jname), None)
         if not j:
@@ -122,12 +134,12 @@ def delete_jobs_and_pipelines(ws, run_id):
             print(f"  Pipeline {pid}: {e}")
 
 
-def delete_dlt_meta_schemas(ws, catalog, run_id, sql):
+def delete_sdp_meta_schemas(ws, catalog, run_id, sql):
     """Drop the three DLT-Meta schemas created by the setup run."""
     for sname in [
-        f"dlt_meta_dataflowspecs_lfc_{run_id}",
-        f"dlt_meta_bronze_lfc_{run_id}",
-        f"dlt_meta_silver_lfc_{run_id}",
+        f"{_DEMO_PREFIX}_dataflowspecs_lfc_{run_id}",
+        f"{_DEMO_PREFIX}_bronze_lfc_{run_id}",
+        f"{_DEMO_PREFIX}_silver_lfc_{run_id}",
     ]:
         s = next((x for x in ws.schemas.list(catalog_name=catalog) if x.name == sname), None)
         if not s:
@@ -218,7 +230,7 @@ def delete_lfc_pipelines_and_jobs_all(ws, name_prefix):
 
 
 def delete_workspace_dir(ws, username, run_id):
-    nb_path = f"/Users/{username}/dlt_meta_lfc_demo/{run_id}"
+    nb_path = f"/Users/{username}/{_DEMO_PREFIX}_lfc_demo/{run_id}"
     try:
         ws.workspace.delete(nb_path, recursive=True)
         print(f"\n  Deleted workspace dir: {nb_path}")
@@ -251,7 +263,7 @@ def main():
         print(f"\n  Read lfc_created.json: schema={lfc_created.get('lfc_schema')}")
 
     print("\nStep 2 — Dropping DLT-Meta UC schemas...")
-    delete_dlt_meta_schemas(ws, catalog, run_id, sql)
+    delete_sdp_meta_schemas(ws, catalog, run_id, sql)
 
     if lfc_created:
         print("\nStep 3 — Dropping LFC streaming-table schema (from notebook output)...")
