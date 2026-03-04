@@ -15,7 +15,8 @@ Objects removed by run_id (always):
 
 LFC resources (run-scoped when possible):
   - The notebook writes conf/lfc_created.json to the volume with lfc_schema, pipeline IDs, scheduler job ID.
-  - Cleanup reads that file (before deleting the volume) and then deletes only that LFC schema, those pipelines, and that job.
+  - Cleanup reads that file (before deleting the volume) and then deletes only that LFC schema,
+    those pipelines, and that job.
   - If the file is missing (e.g. run from before this feature), use flags to delete all:
     --include-all-lfc-schemas   (drops ALL {user}_{source_type}_* schemas)
     --include-all-lfc-pipelines (deletes ALL {user}_*_gw/_ig pipelines and scheduler jobs)
@@ -43,7 +44,7 @@ from integration_tests.run_integration_tests import get_workspace_api_client
 
 # ── Name prefix ─────────────────────────────────────────────────────────────
 # Mirrors launch_lfc_demo.py — change here to rename all references at once.
-_DEMO_SLUG   = "sdp-meta-lfc"  # hyphenated  → job/pipeline names
+_DEMO_SLUG = "sdp-meta-lfc"  # hyphenated  → job/pipeline names
 _DEMO_PREFIX = "sdp_meta"      # underscored → UC schema names, workspace paths
 
 
@@ -66,7 +67,7 @@ def read_lfc_created(ws, catalog, run_id):
 
 def parse_args():
     p = argparse.ArgumentParser(description="Clean up LFC demo resources for a given run_id.")
-    p.add_argument("--run_id",  required=True, help="run_id printed by launch_lfc_demo.py setup")
+    p.add_argument("--run_id", required=True, help="run_id printed by launch_lfc_demo.py setup")
     p.add_argument("--profile", default="DEFAULT", help="Databricks CLI profile (default: DEFAULT)")
     p.add_argument("--catalog", default="main", help="Unity Catalog name (default: main)")
     p.add_argument(
@@ -240,14 +241,14 @@ def delete_workspace_dir(ws, username, run_id):
 
 def main():
     args = parse_args()
-    run_id  = args.run_id
+    run_id = args.run_id
     catalog = args.catalog
 
     print(f"Connecting with profile '{args.profile}'...")
     ws = get_workspace_api_client(args.profile)
-    username    = ws.current_user.me().user_name
+    username = ws.current_user.me().user_name
     name_prefix = re.sub(r"[.\-@]", "_", username.split("@")[0]).lower()
-    sql         = make_sql_runner(ws)
+    sql = make_sql_runner(ws)
 
     print(f"  user       : {username}")
     print(f"  run_id     : {run_id}")

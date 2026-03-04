@@ -938,7 +938,8 @@ def process_arguments() -> dict[str:str]:
             False,
             ["cdc", "qbc", "cdc_single_pipeline"],
         ],
-        ["trigger_interval_min", "LFC trigger interval in minutes — positive integer (lfc demo, default: 5)", str, False, []],
+        ["trigger_interval_min",
+         "LFC trigger interval in minutes — positive integer (lfc demo, default: 5)", str, False, []],
         # Eventhub arguments
         ["eventhub_name", "Provide eventhub_name e.g: iot", str.lower, False, []],
         [
@@ -1069,7 +1070,11 @@ def process_arguments() -> dict[str:str]:
     parser.add_argument(
         "--no_parallel_downstream",
         action="store_true",
-        help="LFC demo: disable parallel downstream (single job: lfc_setup → onboarding → bronze → silver). Default: parallel_downstream on.",
+        help=(
+            "LFC demo: disable parallel downstream"
+            " (single job: lfc_setup → onboarding → bronze → silver)."
+            " Default: parallel_downstream on."
+        ),
     )
     parser.add_argument(
         "--snapshot_method",

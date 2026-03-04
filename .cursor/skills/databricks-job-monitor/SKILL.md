@@ -801,7 +801,7 @@ clean. Here is the full trace so you can recognize the same pattern quickly:
    python demo/launch_lfc_demo.py --profile=e2demofe --run_id=cb89a69bd30c43c29dbb433ecc6ec7fb
    ```
 
-6. **Adding `--snapshot_method=cdf` (Option B) — run `41a635c00c864a51bc27dd11ceb749c5`**
+6. **Adding `--snapshot_method=cdf` (Option B) — run `41a635c00c864a51bc27dd11ceb749c5` (sqlserver)**
 
    Added a `--snapshot_method` CLI flag to `launch_lfc_demo.py` with two options:
    - `cdf` (default): custom `next_snapshot_and_version` lambda; O(1) version-check fast skip
@@ -855,7 +855,15 @@ silver_cdc_apply_changes = {
 }
 ```
 **Files changed:** `demo/launch_lfc_demo.py` (`LFC_INTPK_SILVER_READER_OPTIONS`, `LFC_INTPK_SILVER_CDC_APPLY_CHANGES`) and `demo/lfcdemo-database.ipynb` cell 20.  
-**Verified:** Full test cycle (run `65b21620b71e4e46b3622d1ed1c85246`) — initial downstream SUCCESS, incremental `trigger_ingestion_and_wait` + `bronze_dlt` + `silver_dlt` all SUCCESS.
+**Verified across all three database sources:**
+
+| DB | run_id (prefix) | initial downstream | incremental | bronze.intpk | bronze.dtix |
+|----|----------------|-------------------|-------------|-------------|------------|
+| SQL Server | `65b21620b71e` | SUCCESS | SUCCESS | 4894 rows | 1500 rows |
+| MySQL      | `5f0e703be5a0` | SUCCESS | SUCCESS | 3 rows     | 81 rows   |
+| PostgreSQL | `0b8fc614311b` | SUCCESS | SUCCESS | 26143 rows | 3981 rows |
+
+All runs: `--snapshot_method=cdf`, `--sequence_by_pk`, `--cdc_qbc=cdc`. Bronze and silver rows match on every run. `DESCRIBE HISTORY` shows `MERGE` operations at each update — confirming CDC apply_changes (intpk) and apply_changes_from_snapshot (dtix) are both writing correctly.
 
 ---
 

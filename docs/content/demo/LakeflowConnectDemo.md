@@ -51,7 +51,7 @@ dt  │ ...  │ __start_at                                              │ __e
 
 The active (open) version of the same logical row has `__end_at = NULL`.
 
-Because `__start_at` is a struct, `sequence_by = "__start_at"` compares structs lexicographically — `__cdc_internal_value` encodes a commit position that is lexicographically monotone, so newer row-versions always compare greater. This makes it a safe, non-null sequence key for the silver layer.
+The `__cdc_internal_value` sub-field of `__start_at` encodes a commit position that is lexicographically monotone — newer row-versions always compare greater. However, **`__start_at` cannot be used as `sequence_by`** because initial-load rows on no-PK tables have `__start_at = NULL`, and DLT rejects NULL sequence values. Both `dtix` bronze and silver use `apply_changes_from_snapshot`, which has no `sequence_by`; this property is noted here only as context for the column structure.
 
 **Why `apply_changes` (CDF) cannot be used for `dtix`.** DLT reserves `__START_AT` and `__END_AT` as **system column names** for **all** `APPLY CHANGES` (CDF-based) operations — not just SCD Type 2. Any source that contains columns with these names triggers:
 
@@ -124,16 +124,28 @@ When a source table has **no primary key**, Lakeflow Connect automatically uses 
 1. **UPDATEs** the old row: sets `__end_at` from `NULL` → timestamp (marks the version as closed).
 2. **INSERTs** a new row: new column values, `__start_at` = new timestamp, `__end_at` = `NULL` (new active version).
 
-Because every change produces an UPDATE in the Delta log, `readChangeFeed: true` is required (same as for tables with a PK).
+**Two blockers prevent using CDF `apply_changes` directly:**
+
+1. **DLT reserved columns.** DLT globally reserves `__START_AT` and `__END_AT` as system column names for **all** `APPLY CHANGES` operations. Any source containing these columns — including all LFC SCD2 streaming tables — raises `DLTAnalysisException: system reserved columns __START_AT, __END_AT`. This is not specific to `scd_type: "2"`; it applies even with `scd_type: "1"`.
+
+2. **Null `__start_at` on initial-load rows.** For no-PK tables, LFC inserts the initial snapshot with `__start_at = NULL` for rows that have not yet received a CDC update. If `__start_at` (even after renaming to `lfc_start_at`) is used as part of the key, rows sharing the same source column values all map to `(col_a, col_b, …, null)`, which is non-unique — causing `APPLY_CHANGES_FROM_SNAPSHOT_ERROR.DUPLICATE_KEY_VIOLATION`.
+
+**The correct approach: `apply_changes_from_snapshot` with `lfc_end_at` as the unique key.**
+
+The same solution applied for `dtix` generalises to any no-PK LFC SCD2 table:
+
+- Use `source_format: "snapshot"` + `apply_changes_from_snapshot` (avoids the reserved-column blocker entirely)
+- In `init_sdp_meta_pipeline.py`, register a `bronze_custom_transform` (or `next_snapshot_and_version` lambda) that renames `__START_AT` → `lfc_start_at` and `__END_AT` → `lfc_end_at`
+- Use `lfc_end_at` as the unique component of the key — LFC always assigns a unique `__END_AT.__cdc_internal_value` to every row (including initial-load rows), making it safe as a key; `lfc_start_at` is unsafe (can be null for many rows)
 
 **How to configure DLT-Meta:**
 
 | Setting | Value | Reason |
 |---------|-------|--------|
-| `keys` | `[all_source_columns] + ["__start_at"]` | Identifies each row **version** uniquely. LFC's implicit PK is all source columns; `__start_at` distinguishes versions of the same logical row. |
-| `scd_type` | `"1"` | DLT applies UPDATEs in-place. LFC's `__end_at` is the authoritative history column — setting `scd_type: "2"` would cause DLT to add its own duplicate `__START_AT`/`__END_AT` on top of LFC's columns. |
-| `sequence_by` (bronze) | `"_commit_version"` | Always non-null from the change data feed. The UPDATE event that sets `__end_at` always has a higher `_commit_version` than the original INSERT, so the most-recent `__end_at` value wins the merge. Using `__end_at` directly would fail because DLT rejects `NULL` sequence values, and active rows always have `__end_at = NULL`. |
-| `sequence_by` (silver) | `"__start_at"` | Always non-null; unique per row-version; monotonically increasing per logical row — equivalent to ordering by "most recent `__end_at`" since newer versions always have a later `__start_at`. |
+| `source_format` | `"snapshot"` | Required to avoid the DLT reserved-column blocker. |
+| `snapshot_format` | `"delta"` | Tells DLT-Meta the snapshot source is a Delta table. |
+| `keys` | `[all_source_columns] + ["lfc_end_at"]` | Source columns identify the logical row; `lfc_end_at` (renamed from `__END_AT`) is always unique per row-version, distinguishing versions of the same logical row. |
+| `scd_type` | `"1"` | DLT applies row-level UPDATEs in-place against the keys. LFC's `lfc_end_at` is the authoritative history column. |
 
 **Getting the column list from INFORMATION_SCHEMA:**
 
@@ -142,19 +154,20 @@ The notebook queries `INFORMATION_SCHEMA.COLUMNS` (see the SQLAlchemy display ce
 ```python
 _src_cols = _get_no_pk_scd2_keys(dml_generator.engine, schema, "my_no_pk_table")
 # e.g. ["col_a", "col_b", "col_c"]  — all source columns in ORDINAL_POSITION order
+# Keys become ["col_a", "col_b", "col_c", "lfc_end_at"]
 ```
 
 **Resulting onboarding config (bronze):**
 
 ```json
 {
-  "bronze_reader_options": { "readChangeFeed": "true" },
-  "bronze_cdc_apply_changes": {
-    "keys": ["col_a", "col_b", "col_c", "__start_at"],
-    "sequence_by": "_commit_version",
-    "scd_type": "1",
-    "apply_as_deletes": "_change_type = 'delete'",
-    "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"]
+  "source_format": "snapshot",
+  "source_details": {
+    "snapshot_format": "delta"
+  },
+  "bronze_apply_changes_from_snapshot": {
+    "keys": ["col_a", "col_b", "col_c", "lfc_end_at"],
+    "scd_type": "1"
   }
 }
 ```
@@ -163,28 +176,37 @@ _src_cols = _get_no_pk_scd2_keys(dml_generator.engine, schema, "my_no_pk_table")
 
 ```json
 {
-  "silver_cdc_apply_changes": {
-    "keys": ["col_a", "col_b", "col_c", "__start_at"],
-    "sequence_by": "__start_at",
+  "silver_apply_changes_from_snapshot": {
+    "keys": ["col_a", "col_b", "col_c", "lfc_end_at"],
     "scd_type": "1"
   }
 }
+```
+
+The column rename (`__START_AT` → `lfc_start_at`, `__END_AT` → `lfc_end_at`) must be applied in the `bronze_custom_transform` or `next_snapshot_and_version` lambda registered in `init_sdp_meta_pipeline.py`, targeting the specific table name — exactly as done for `dtix`. Without the rename, DLT strips the reserved columns from the snapshot view before key resolution, causing `UNRESOLVED_COLUMN` errors.
+
+**Verify key uniqueness before setting keys:**
+```sql
+-- Should return total == distinct; if not, lfc_end_at is not unique (unexpected)
+SELECT COUNT(*) AS total,
+       COUNT(DISTINCT struct(col_a, col_b, col_c, __END_AT)) AS distinct_keys
+FROM <lfc_source_catalog>.<lfc_schema>.my_no_pk_table;
 ```
 
 **In the notebook**, to use the no-PK pattern for any SCD2 table, call the three helpers defined in cell 20 immediately above the `_dtix_cdc` definition:
 
 ```python
 _src_cols        = _get_no_pk_scd2_keys(dml_generator.engine, schema, "my_table")
-_my_table_cdc    = _no_pk_scd2_bronze_cdc(_src_cols)
-_my_table_silver = _no_pk_scd2_silver_cdc(_src_cols)
+_my_table_acfs   = _no_pk_scd2_bronze_acfs(_src_cols)   # apply_changes_from_snapshot config
+_my_table_silver = _no_pk_scd2_silver_acfs(_src_cols)
 ```
 
-For example, to treat `dtix` as a no-PK table (replacing the static `["dt"]` key config), uncomment the three lines shown in cell 20:
+For example, to treat `dtix` as a no-PK table (replacing the static `["dt", "lfc_end_at"]` key config), uncomment the three lines shown in cell 20:
 
 ```python
 _dtix_src_cols   = _get_no_pk_scd2_keys(dml_generator.engine, schema, "dtix")
-_dtix_cdc        = _no_pk_scd2_bronze_cdc(_dtix_src_cols)
-_dtix_silver_cdc = _no_pk_scd2_silver_cdc(_dtix_src_cols)
+_dtix_acfs       = _no_pk_scd2_bronze_acfs(_dtix_src_cols)
+_dtix_silver_acfs = _no_pk_scd2_silver_acfs(_dtix_src_cols)
 ```
 
 ---
@@ -290,7 +312,7 @@ Alternatively, click **Run now** on the `sdp-meta-lfc-demo-incremental-<run_id>`
 
 **When the job runs on Databricks (asynchronous):**
 
-1. **Metadata onboarded** – The `sdp_meta onboard` step loads metadata into dataflowspec tables from `onboarding.json`, which points to the two LFC streaming tables (`intpk`, `dtix`) as `source_format: delta`.
+1. **Metadata onboarded** – The `sdp_meta onboard` step loads metadata into dataflowspec tables from `onboarding.json`, which points to `intpk` as `source_format: delta` and `dtix` as `source_format: snapshot`.
 2. **Bronze pipeline runs** – The bronze pipeline reads from the LFC streaming tables via `spark.readStream.table()` and writes to bronze Delta tables. All rows pass through (no quarantine rules).
 3. **Silver pipeline runs** – The silver pipeline applies pass-through transformations (`select *`) from the metadata and writes to silver tables.
 
@@ -429,6 +451,20 @@ DLT-Meta Bronze
     v
 DLT-Meta Silver
 ```
+
+---
+
+### Test Results — All Three Database Sources
+
+The following results were captured from a full AI-initiated test cycle (`--snapshot_method=cdf`, `--sequence_by_pk`, `--cdc_qbc=cdc`) against all three supported source databases. Each run completed an **initial** downstream pass (onboarding → bronze → silver) followed by an **incremental** re-trigger (LFC ingest → bronze → silver).
+
+| Source DB | `run_id` (prefix) | Initial downstream | Incremental | bronze `intpk` | bronze `dtix` | silver `intpk` | silver `dtix` |
+|-----------|------------------|-------------------|-------------|---------------|--------------|---------------|--------------|
+| **SQL Server** | `65b21620b71e` | ✓ SUCCESS | ✓ SUCCESS | 4,894 rows | 1,500 rows | 4,894 rows | 1,500 rows |
+| **MySQL** | `5f0e703be5a0` | ✓ SUCCESS | ✓ SUCCESS | 3 rows | 81 rows | 3 rows | 81 rows |
+| **PostgreSQL** | `0b8fc614311b` | ✓ SUCCESS | ✓ SUCCESS | 26,143 rows | 3,981 rows | 26,143 rows | 3,981 rows |
+
+**Bronze = Silver row counts on every run** — CDC is applying correctly through both layers. `DESCRIBE HISTORY` shows `MERGE` operations at each update, confirming `apply_changes` (intpk via CDF) and `apply_changes_from_snapshot` (dtix via `next_snapshot_and_version` lambda with `lfc_end_at` key) are both writing correctly. Incremental completed in ~3 minutes per run with no `DELTA_SOURCE_TABLE_IGNORE_CHANGES` errors on silver `intpk` (the `readChangeFeed: true` silver fix confirmed working).
 
 ---
 

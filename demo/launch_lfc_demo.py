@@ -97,7 +97,7 @@ JOBS_LIST_LIMIT = 100
 # ── Name prefix ─────────────────────────────────────────────────────────────
 # Change these two constants to rename all job/pipeline/schema/path references
 # at once without hunting through the file.
-_DEMO_SLUG   = "sdp-meta-lfc"  # hyphenated  → job/pipeline names
+_DEMO_SLUG = "sdp-meta-lfc"  # hyphenated  → job/pipeline names
 _DEMO_PREFIX = "sdp_meta"      # underscored → UC schema names, workspace paths
 
 
@@ -107,13 +107,16 @@ class LFCRunnerConf(SDPMetaRunnerConf):
     lfc_schema: str = None          # source schema on the source DB (passed to notebook as source_schema)
     connection_name: str = None     # Databricks connection name for the source DB
     cdc_qbc: str = "cdc"            # LFC pipeline mode
-    trigger_interval_min: str = "5" # LFC trigger interval in minutes
+    trigger_interval_min: str = "5"  # LFC trigger interval in minutes
     sequence_by_pk: bool = False   # if True, use primary key for CDC silver sequence_by; else use dt
-    parallel_downstream: bool = True   # default True; notebook triggers onboarding→bronze→silver when ready and keeps running. Use --no_parallel_downstream to disable.
-    downstream_job_id: int = None  # when parallel_downstream, ID of the onboarding→bronze→silver job (set by launcher)
+    # default True; notebook triggers onboarding→bronze→silver when ready.
+    # Use --no_parallel_downstream to run as single job.
+    parallel_downstream: bool = True
+    downstream_job_id: int = None  # when parallel_downstream, ID of the onboarding→bronze→silver job
     lfc_notebook_ws_path: str = None  # resolved workspace path of the uploaded LFC notebook
-    setup_job_id: int = None       # setup job id (set when resolving incremental; used to write metadata)
-    snapshot_method: str = "cdf"   # "cdf" = custom next_snapshot_and_version lambda (O(1) fast skip); "full" = view-based full scan
+    setup_job_id: int = None  # setup job id (set when resolving incremental; used to write metadata)
+    # "cdf" = custom next_snapshot_and_version lambda (O(1) fast skip); "full" = view-based full scan
+    snapshot_method: str = "cdf"
 
 
 class DLTMETALFCDemo(SDPMETARunner):
@@ -613,26 +616,26 @@ class DLTMETALFCDemo(SDPMETARunner):
                     package_name="databricks_labs_sdp_meta",
                     entry_point="run",
                     named_parameters={
-                        "onboard_layer":             "bronze_silver",
-                        "database":                  (
+                        "onboard_layer": "bronze_silver",
+                        "database": (
                             f"{runner_conf.uc_catalog_name}.{runner_conf.sdp_meta_schema}"
                         ),
-                        "onboarding_file_path":      (
+                        "onboarding_file_path": (
                             f"{runner_conf.uc_volume_path}conf/onboarding.json"
                         ),
                         "silver_dataflowspec_table": "silver_dataflowspec_cdc",
-                        "silver_dataflowspec_path":  (
+                        "silver_dataflowspec_path": (
                             f"{runner_conf.uc_volume_path}data/dlt_spec/silver"
                         ),
                         "bronze_dataflowspec_table": "bronze_dataflowspec_cdc",
-                        "bronze_dataflowspec_path":  (
+                        "bronze_dataflowspec_path": (
                             f"{runner_conf.uc_volume_path}data/dlt_spec/bronze"
                         ),
-                        "import_author":             _DEMO_SLUG,
-                        "version":                   "v1",
-                        "overwrite":                 "True",
-                        "env":                       runner_conf.env,
-                        "uc_enabled":                "True",
+                        "import_author": _DEMO_SLUG,
+                        "version": "v1",
+                        "overwrite": "True",
+                        "env": runner_conf.env,
+                        "uc_enabled": "True",
                     },
                 ),
             ),
@@ -689,13 +692,13 @@ class DLTMETALFCDemo(SDPMETARunner):
         ]
 
         base_params = {
-            "connection":           runner_conf.connection_name,
-            "cdc_qbc":              runner_conf.cdc_qbc,
+            "connection": runner_conf.connection_name,
+            "cdc_qbc": runner_conf.cdc_qbc,
             "trigger_interval_min": runner_conf.trigger_interval_min,
-            "target_catalog":       runner_conf.uc_catalog_name,
-            "source_schema":        runner_conf.lfc_schema,
-            "run_id":               runner_conf.run_id,
-            "sequence_by_pk":       str(runner_conf.sequence_by_pk).lower(),
+            "target_catalog": runner_conf.uc_catalog_name,
+            "source_schema": runner_conf.lfc_schema,
+            "run_id": runner_conf.run_id,
+            "sequence_by_pk": str(runner_conf.sequence_by_pk).lower(),
         }
         if runner_conf.parallel_downstream:
             base_params["downstream_job_id"] = str(runner_conf.downstream_job_id)
@@ -728,26 +731,26 @@ class DLTMETALFCDemo(SDPMETARunner):
                     package_name="databricks_labs_sdp_meta",
                     entry_point="run",
                     named_parameters={
-                        "onboard_layer":             "bronze_silver",
-                        "database":                  (
+                        "onboard_layer": "bronze_silver",
+                        "database": (
                             f"{runner_conf.uc_catalog_name}.{runner_conf.sdp_meta_schema}"
                         ),
-                        "onboarding_file_path":      (
+                        "onboarding_file_path": (
                             f"{runner_conf.uc_volume_path}conf/onboarding.json"
                         ),
                         "silver_dataflowspec_table": "silver_dataflowspec_cdc",
-                        "silver_dataflowspec_path":  (
+                        "silver_dataflowspec_path": (
                             f"{runner_conf.uc_volume_path}data/dlt_spec/silver"
                         ),
                         "bronze_dataflowspec_table": "bronze_dataflowspec_cdc",
-                        "bronze_dataflowspec_path":  (
+                        "bronze_dataflowspec_path": (
                             f"{runner_conf.uc_volume_path}data/dlt_spec/bronze"
                         ),
-                        "import_author":             _DEMO_SLUG,
-                        "version":                   "v1",
-                        "overwrite":                 "True",
-                        "env":                       runner_conf.env,
-                        "uc_enabled":                "True",
+                        "import_author": _DEMO_SLUG,
+                        "version": "v1",
+                        "overwrite": "True",
+                        "env": runner_conf.env,
+                        "uc_enabled": "True",
                     },
                 ),
             )
@@ -827,15 +830,18 @@ class DLTMETALFCDemo(SDPMETARunner):
 
 
 lfc_args_map = {
-    "--profile":              "Databricks CLI profile name (default: DEFAULT)",
-    "--uc_catalog_name":      "Unity Catalog name — required for setup, derived from job in incremental mode",
-    "--source_schema":        "Source schema on the source database (default: lfcddemo)",
-    "--connection_name":      "Databricks connection name for source DB (e.g. lfcddemo-azure-sqlserver)",
-    "--cdc_qbc":              "LFC pipeline mode: cdc | qbc | cdc_single_pipeline (default: cdc)",
+    "--profile": "Databricks CLI profile name (default: DEFAULT)",
+    "--uc_catalog_name": "Unity Catalog name — required for setup, derived from job in incremental mode",
+    "--source_schema": "Source schema on the source database (default: lfcddemo)",
+    "--connection_name": "Databricks connection name for source DB (e.g. lfcddemo-azure-sqlserver)",
+    "--cdc_qbc": "LFC pipeline mode: cdc | qbc | cdc_single_pipeline (default: cdc)",
     "--trigger_interval_min": "LFC trigger interval in minutes — positive integer (default: 5)",
-    "--sequence_by_pk":       "Use primary key for CDC silver sequence_by; default: use dt column",
-    "--no_parallel_downstream": "Disable parallel downstream (use single job: lfc_setup → onboarding → bronze → silver). Default: parallel_downstream is on.",
-    "--run_id":               "Existing run_id to re-trigger bronze/silver; implies incremental mode",
+    "--sequence_by_pk": "Use primary key for CDC silver sequence_by; default: use dt column",
+    "--no_parallel_downstream": (
+        "Disable parallel downstream (single job: lfc_setup → onboarding → bronze → silver)."
+        " Default: parallel_downstream is on."
+    ),
+    "--run_id": "Existing run_id to re-trigger bronze/silver; implies incremental mode",
 }
 
 lfc_mandatory_args = ["uc_catalog_name", "connection_name"]

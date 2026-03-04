@@ -29,16 +29,19 @@ parser.add_argument("--run_id", required=True, help="run_id printed at the end o
 args = parser.parse_args()
 
 PROFILE = args.profile
-RUN_ID  = args.run_id
+RUN_ID = args.run_id
 
 ws = get_workspace_api_client(PROFILE)
 
 # ── resolve job IDs by name ────────────────────────────────────────────────────
+
+
 def find_job(name):
     return next((j for j in ws.jobs.list(name=name) if j.settings.name == name), None)
 
+
 setup_job = find_job(f"dlt-meta-techsummit-demo-{RUN_ID}")
-incr_job  = find_job(f"dlt-meta-techsummit-demo-incremental-{RUN_ID}")
+incr_job = find_job(f"dlt-meta-techsummit-demo-incremental-{RUN_ID}")
 if not setup_job:
     sys.exit(f"Setup job not found for run_id={RUN_ID}")
 
@@ -74,10 +77,10 @@ for job, label in [(setup_job, "setup")] + ([(incr_job, "incremental")] if incr_
         except Exception:
             pass
         runs.append({
-            "label":         label,
-            "run_id":        run.run_id,
-            "start_ms":      run.start_time or 0,
-            "result":        result,
+            "label": label,
+            "run_id": run.run_id,
+            "start_ms": run.start_time or 0,
+            "result": result,
             "rows_per_file": rows_per_file,
         })
 
@@ -104,13 +107,14 @@ print(f"  {len(csv_files)} CSV file(s) found")
 now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 for i, run in enumerate(runs):
     w_start = run["start_ms"]
-    w_end   = runs[i + 1]["start_ms"] if i + 1 < len(runs) else now_ms
+    w_end = runs[i + 1]["start_ms"] if i + 1 < len(runs) else now_ms
     matched = [f for f in csv_files if w_start <= f["modified"] < w_end]
-    run["new_files"]  = len(matched)
-    run["generated"]  = len(matched) * run["rows_per_file"]
+    run["new_files"] = len(matched)
+    run["generated"] = len(matched) * run["rows_per_file"]
 
 # ── SQL helper ─────────────────────────────────────────────────────────────────
 wh_id = next(w for w in ws.warehouses.list() if str(w.state).endswith("RUNNING")).id
+
 
 def q(sql):
     resp = ws.statement_execution.execute_statement(
@@ -122,10 +126,12 @@ def q(sql):
     return resp.result.data_array or [] if resp.status.state == StatementState.SUCCEEDED else []
 
 # ── STREAMING UPDATE history for bronze and silver ────────────────────────────
+
+
 def streaming_updates(schema, table):
     updates = []
     for row in q(f"DESCRIBE HISTORY {CATALOG}.{schema}.{table}"):
-        version, ts, op, raw = row[0], row[1], row[4], row[12]
+        version, ts, op, raw = row[0], row[1], row[4], row[12]  # noqa: F841
         if op == "STREAMING UPDATE":
             try:
                 m = json.loads(raw) if raw else {}
@@ -135,6 +141,7 @@ def streaming_updates(schema, table):
             updates.append({"ts": dt, "rows": int(m.get("numOutputRows", 0))})
     updates.sort(key=lambda u: u["ts"])
     return updates
+
 
 print("Reading Delta history...")
 bronze_upd = streaming_updates(f"dlt_meta_bronze_demo_{RUN_ID}", "table_1")
