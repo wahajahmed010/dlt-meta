@@ -72,11 +72,17 @@ LFC_DTIX_BRONZE_APPLY_CHANGES_FROM_SNAPSHOT = {
     "keys": ["dt", "lfc_end_at"],
     "scd_type": "1",
 }
-# Silver merge by pk so intpk silver accepts insert/update/delete (one row per pk)
+# Silver reads from bronze intpk with readChangeFeed=true so that MERGE operations written
+# by bronze CDC (apply_changes) are consumed as logical CDC rows rather than raw Delta files.
+# Without CDF, Delta streaming raises DELTA_SOURCE_TABLE_IGNORE_CHANGES on any MERGE commit.
+LFC_INTPK_SILVER_READER_OPTIONS = {"readChangeFeed": "true"}
+# Silver CDC config for intpk: CDF-aware (handles _change_type, sequences by _commit_version).
 LFC_INTPK_SILVER_CDC_APPLY_CHANGES = {
     "keys": ["pk"],
-    "sequence_by": "dt",
+    "sequence_by": "_commit_version",
     "scd_type": "1",
+    "apply_as_deletes": "_change_type = 'delete'",
+    "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"],
 }
 # dtix silver: same snapshot approach as bronze; reads bronze as a snapshot.
 # Bronze already has lfc_start_at/lfc_end_at (renamed from LFC's __START_AT/__END_AT).
@@ -107,6 +113,7 @@ class LFCRunnerConf(SDPMetaRunnerConf):
     downstream_job_id: int = None  # when parallel_downstream, ID of the onboarding→bronze→silver job (set by launcher)
     lfc_notebook_ws_path: str = None  # resolved workspace path of the uploaded LFC notebook
     setup_job_id: int = None       # setup job id (set when resolving incremental; used to write metadata)
+    snapshot_method: str = "cdf"   # "cdf" = custom next_snapshot_and_version lambda (O(1) fast skip); "full" = view-based full scan
 
 
 class DLTMETALFCDemo(SDPMETARunner):
@@ -151,6 +158,7 @@ class DLTMETALFCDemo(SDPMETARunner):
             trigger_interval_min=str(self.args.get("trigger_interval_min") or "5"),
             sequence_by_pk=bool(self.args.get("sequence_by_pk")),
             parallel_downstream=not bool(self.args.get("no_parallel_downstream")),
+            snapshot_method=self.args.get("snapshot_method") or "cdf",
         )
 
         if self.args.get("uc_catalog_name"):
@@ -380,11 +388,10 @@ class DLTMETALFCDemo(SDPMETARunner):
                         f"{vol}/conf/dqe/bronze_dqe.json"
                     ),
                 }
-                silver_seq = "pk" if runner_conf.sequence_by_pk else "dt"
-                entry["silver_cdc_apply_changes"] = {
-                    **LFC_INTPK_SILVER_CDC_APPLY_CHANGES,
-                    "sequence_by": silver_seq,
-                }
+                # Silver reads from bronze intpk via CDF; sequence_by is always _commit_version.
+                # The --sequence_by_pk flag no longer changes sequencing (CDF removes that ambiguity).
+                entry["silver_reader_options"] = LFC_INTPK_SILVER_READER_OPTIONS
+                entry["silver_cdc_apply_changes"] = LFC_INTPK_SILVER_CDC_APPLY_CHANGES
             onboarding.append(entry)
 
         # Pass-through: select all columns as-is
@@ -470,12 +477,17 @@ class DLTMETALFCDemo(SDPMETARunner):
             print(f"  Uploaded {nb_name} for incremental run.")
 
     def create_bronze_silver_dlt(self, runner_conf: LFCRunnerConf):
+        # Pass the snapshot strategy to the bronze pipeline's Spark conf so that
+        # init_sdp_meta_pipeline.py can select between the custom next_snapshot_and_version
+        # lambda ("cdf", default) and the built-in view-based full scan ("full").
+        bronze_extra_conf = {"dtix_snapshot_method": runner_conf.snapshot_method}
         runner_conf.bronze_pipeline_id = self.create_sdp_meta_pipeline(
             f"{_DEMO_SLUG}-bronze-{runner_conf.run_id}",
             "bronze",
             "A1",
             runner_conf.bronze_schema,
             runner_conf,
+            extra_config=bronze_extra_conf,
         )
         runner_conf.silver_pipeline_id = self.create_sdp_meta_pipeline(
             f"{_DEMO_SLUG}-silver-{runner_conf.run_id}",

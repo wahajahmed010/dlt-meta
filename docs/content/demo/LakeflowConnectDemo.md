@@ -24,8 +24,8 @@ Both SCD types produce non-append Delta commits (UPDATE/DELETE for SCD1; INSERT 
 
 | Table | LFC SCD type | keys | DLT-Meta approach | `scd_type` | Notes |
 |-------|-------------|------|-------------------|------------|-------|
-| **intpk** | Type 1 | `pk` | `readChangeFeed` + `bronze_cdc_apply_changes` | `"1"` | `apply_as_deletes: _change_type = 'delete'`; `sequence_by`: `_commit_version` (bronze) / `dt` (silver) |
-| **dtix** | Type 2 | `dt, lfc_end_at` | `source_format: snapshot` + `bronze_apply_changes_from_snapshot` | `"1"` | DLT reserves `__START_AT`/`__END_AT` globally — columns renamed via `bronze_custom_transform`; `lfc_end_at` is always unique per row (see note below) |
+| **intpk** | Type 1 | `pk` | `readChangeFeed` + `bronze_cdc_apply_changes` | `"1"` | `apply_as_deletes: _change_type = 'delete'`; `sequence_by`: `_commit_version` (bronze and silver via CDF) |
+| **dtix** | Type 2 | `dt, lfc_end_at` | `source_format: snapshot` + `bronze_apply_changes_from_snapshot` + custom `next_snapshot_and_version` lambda (`--snapshot_method=cdf`, default) | `"1"` | DLT reserves `__START_AT`/`__END_AT` globally — renamed inside the lambda; O(1) version-check skips the pipeline when source unchanged; `lfc_end_at` is always unique per row (see note below) |
 
 **`sequence_by` rules.**
 - Cannot be blank and must differ from `keys`; it determines which CDF event for the same key is latest.
@@ -62,10 +62,33 @@ in your source: __START_AT, __END_AT.
 
 This applies even with `scd_type: "1"`. The LFC SCD2 streaming table always has `__START_AT`/`__END_AT` columns, so `apply_changes` simply cannot be used as the source.
 
-**The solution: `apply_changes_from_snapshot` + column rename.** Two changes are required:
+**The solution: `apply_changes_from_snapshot` + version-aware `next_snapshot_and_version` lambda.** Two components work together:
 
-1. **Column rename** — `init_sdp_meta_pipeline.py` registers a `bronze_custom_transform` that renames `__START_AT` → `lfc_start_at` and `__END_AT` → `lfc_end_at` for the `dtix` table. The rename happens inside the DLT view function, before DLT analyses the schema.
-2. **`apply_changes_from_snapshot`** — instead of CDF-based `apply_changes`, `dtix` is configured with `source_format: "snapshot"` + `source_details.snapshot_format: "delta"`. This uses DLT's snapshot-comparison CDC (`create_auto_cdc_from_snapshot_flow`) — a completely different code path that reads the full LFC table as a batch on each pipeline trigger.
+1. **Column rename inside the lambda** — `init_sdp_meta_pipeline.py` defines a `dtix_next_snapshot_and_version` function that renames `__START_AT` → `lfc_start_at` and `__END_AT` → `lfc_end_at` at runtime inside the Python lambda, before DLT ever analyses the schema. DLT never sees the reserved names.
+2. **`apply_changes_from_snapshot` with a custom lambda** — `dtix` is configured with `source_format: "snapshot"` + `source_details.snapshot_format: "delta"`. DLT-Meta passes the lambda as the snapshot source; `create_auto_cdc_from_snapshot_flow` calls it on each trigger to get the current data, diffs against its internal materialization, and applies changed rows to the target.
+
+**How the lambda works (`--snapshot_method=cdf`, the default):**
+
+```
+trigger fires
+    │
+    ▼
+DESCRIBE HISTORY <source_table> LIMIT 1   ← O(1) metadata read
+    │
+    ├── version == last_processed_version?
+    │       └── return None  →  DLT marks run SUCCESS, no data touched  ← O(1) fast skip
+    │
+    └── version advanced?
+            └── spark.read.table(<source>)                 ← O(n) full read
+                rename __START_AT → lfc_start_at
+                rename __END_AT   → lfc_end_at
+                dropDuplicates()
+                return (df, current_version)
+```
+
+The O(1) fast skip is the key advantage over the built-in view-based path (`--snapshot_method=full`), which always reads the full table regardless of whether anything changed.
+
+> **`--snapshot_method=full` (fallback).** When `--snapshot_method=full` is passed, DLT-Meta creates a DLT view over the source table and uses it directly as the snapshot source (no custom lambda). DLT scans the entire source on **every** trigger — O(n) always. Use this as a stable reference or when the lambda causes issues. For production-scale tables, permanently renaming the LFC reserved columns (outside DLT) so the full CDF path becomes available is the recommended long-term approach.
 
 With `scd_type: "1"` and `keys: ["dt", "lfc_end_at"]`, each unique `(dt, lfc_end_at)` pair identifies a row-version; DLT applies INSERTs, UPDATEs, and DELETEs in-place against those keys. The bronze/silver tables carry `lfc_start_at`/`lfc_end_at` instead of the original LFC column names.
 
@@ -211,8 +234,11 @@ python demo/launch_lfc_demo.py \
   --connection_name=lfcddemo-azure-sqlserver \
   --cdc_qbc=cdc \
   --trigger_interval_min=5 \
+  --snapshot_method=cdf \
   --profile=DEFAULT
 ```
+
+`--snapshot_method=cdf` is the default; you can omit it or explicitly pass `--snapshot_method=full` to use the built-in full-scan path instead (see [dtix snapshot strategy](#the-solution-apply_changes_from_snapshot--version-aware-next_snapshot_and_version-lambda) above).
 
 To use the **primary key** as the CDC silver `sequence_by` (instead of the `dt` column), add `--sequence_by_pk`:
 ```commandline
@@ -236,6 +262,7 @@ Normally you do **not** pass `--source_schema`; it is read from the **Databricks
 | `cdc_qbc` | LFC pipeline mode | `cdc` \| `qbc` \| `cdc_single_pipeline` |
 | `trigger_interval_min` | LFC trigger interval in minutes (positive integer) | `5` |
 | `sequence_by_pk` | Use primary key (`pk`) for CDC silver `sequence_by`; if omitted, use `dt` column | `false` (use `dt`) |
+| `snapshot_method` | Snapshot strategy for the `dtix` (no-PK SCD2) table. `cdf` = custom `next_snapshot_and_version` lambda with O(1) version check (skips pipeline if nothing changed). `full` = built-in view-based full scan on every trigger. | `cdf` |
 | `parallel_downstream` | *(Default on.)* Notebook triggers onboarding → bronze → silver when volume/tables are ready and keeps running until scheduler queue is empty. | on (use `--no_parallel_downstream` to disable) |
 | `profile` | Databricks CLI profile | `DEFAULT` |
 | `run_id` | Existing `run_id` — presence implies incremental (re-trigger) mode | — |
@@ -326,10 +353,13 @@ DLT-Meta is configured with `source_format: delta` and points directly at the LF
     "silver_database_prod": "<catalog>.sdp_meta_silver_lfc_<run_id>",
     "silver_table": "intpk",
     "silver_transformation_json_prod": "<volume_path>/conf/silver_transformations.json",
+    "silver_reader_options": { "readChangeFeed": "true" },
     "silver_cdc_apply_changes": {
       "keys": ["pk"],
-      "sequence_by": "dt",
-      "scd_type": "1"
+      "sequence_by": "_commit_version",
+      "scd_type": "1",
+      "apply_as_deletes": "_change_type = 'delete'",
+      "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"]
     }
   },
   {
@@ -345,14 +375,14 @@ DLT-Meta is configured with `source_format: delta` and points directly at the LF
     "bronze_database_prod": "<catalog>.sdp_meta_bronze_lfc_<run_id>",
     "bronze_table": "dtix",
     "bronze_apply_changes_from_snapshot": {
-      "keys": ["dt", "lfc_start_at"],
+      "keys": ["dt", "lfc_end_at"],
       "scd_type": "1"
     },
     "silver_database_prod": "<catalog>.sdp_meta_silver_lfc_<run_id>",
     "silver_table": "dtix",
     "silver_transformation_json_prod": "<volume_path>/conf/silver_transformations.json",
     "silver_apply_changes_from_snapshot": {
-      "keys": ["dt", "lfc_start_at"],
+      "keys": ["dt", "lfc_end_at"],
       "scd_type": "1"
     }
   }
@@ -392,8 +422,8 @@ LFC Gateway + Ingestion  (lfcdemo-database.ipynb)
 Streaming tables:  {catalog}.{lfc_schema}.intpk  (SCD Type 1)
                    {catalog}.{lfc_schema}.dtix   (SCD Type 2)
     |
-    v  intpk: source_format=delta + readChangeFeed (CDC apply_changes)
-    |  dtix:  source_format=snapshot + snapshot_format=delta (apply_changes_from_snapshot)
+    v  intpk: source_format=delta + readChangeFeed (bronze + silver CDC apply_changes)
+    |  dtix:  source_format=snapshot + snapshot_format=delta + next_snapshot_and_version lambda (apply_changes_from_snapshot, default cdf mode)
 DLT-Meta Bronze
     |
     v
@@ -426,3 +456,7 @@ DLT-Meta Silver
 5. **Suspicion without checking.** When the DLT (bronze) pipeline update failed again, we **suspected** `delta.enableChangeDataFeed` was false and added an `ALTER TABLE ... SET TBLPROPERTIES` step **without checking** the table property. In reality LFC sets CDF to true by default; the failure was likely something else (table not found, wrong schema, or timing). The ALTER step is not allowed on LFC streaming tables and is unnecessary. The notebook now skips the ALTER when the platform reports that property changes are not allowed and resolves the table location from `lfc_created.json` with a longer wait.
 
 6. **Table existence check: SHOW TBLPROPERTIES vs SELECT.** The notebook used `SHOW TBLPROPERTIES` to decide if the LFC `intpk` table existed. On LFC streaming tables that can fail even when the table is queryable (`SELECT * FROM ...` runs). The existence check was changed to `SELECT 1 FROM <table> LIMIT 0` so the wait loop succeeds as soon as the table can be read.
+
+7. **`DELTA_SOURCE_TABLE_IGNORE_CHANGES` on silver `intpk` (incremental run).** Bronze `intpk` uses `apply_changes` (CDC), which writes MERGEs into the Delta log. On the incremental run the silver streaming read resumed from its checkpoint and hit those MERGE commits, which Delta streaming rejects by default. Fix: `silver_reader_options: {"readChangeFeed": "true"}` is now set for `intpk` silver so it consumes the bronze CDF (which handles MERGE natively). The silver CDC was updated accordingly: `sequence_by: "_commit_version"`, `apply_as_deletes: "_change_type = 'delete'"`, and `except_column_list` to strip the CDF metadata columns from the silver table. Without this fix, the first incremental run always fails.
+
+8. **`apply_changes_from_snapshot` full-scan inefficiency for `dtix` (`--snapshot_method=cdf`).** The built-in view-based snapshot path (`--snapshot_method=full`) reads the entire `dtix` source table on every pipeline trigger — O(n) always. For a slowly-changing table triggered frequently, this is wasteful. The new default (`--snapshot_method=cdf`) supplies a custom `next_snapshot_and_version` lambda that first does an O(1) `DESCRIBE HISTORY LIMIT 1` check. If the source Delta table version has not advanced since the last run, the lambda returns `None` and DLT skips the run entirely (no data read, no diff). Only when the version advances does the lambda do the full read + rename. This required a small enhancement to `dataflow_pipeline.py` (`is_create_view` and `apply_changes_from_snapshot`) to allow the custom lambda to take priority over the built-in view path.

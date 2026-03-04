@@ -260,6 +260,7 @@ class SDPMETARunner:
         group: str,
         target_schema: str,
         runner_conf: SDPMetaRunnerConf,
+        extra_config: dict = None,
     ) -> str:
         """
         Create a DLT pipeline.
@@ -270,6 +271,8 @@ class SDPMETARunner:
         layer : str = The layer of the pipeline.
         target_schema : str = The target schema of the pipeline.
         runner_conf : SDPMetaRunnerConf = The runner configuration.
+        extra_config : dict = Optional extra Spark configuration key/value pairs merged
+            into the pipeline configuration (e.g. {"dtix_snapshot_method": "cdf"}).
 
         Returns:
         -------
@@ -285,6 +288,8 @@ class SDPMETARunner:
             "sdp_meta_whl": runner_conf.remote_whl_path,
             "pipelines.externalSink.enabled": "true",
         }
+        if extra_config:
+            configuration.update(extra_config)
         created = None
 
         configuration[f"{layer}.dataflowspecTable"] = (
@@ -1065,6 +1070,20 @@ def process_arguments() -> dict[str:str]:
         "--no_parallel_downstream",
         action="store_true",
         help="LFC demo: disable parallel downstream (single job: lfc_setup → onboarding → bronze → silver). Default: parallel_downstream on.",
+    )
+    parser.add_argument(
+        "--snapshot_method",
+        choices=["cdf", "full"],
+        default="cdf",
+        help=(
+            "LFC demo: snapshot processing strategy for the dtix (no-PK SCD2) table.\n"
+            "  cdf  (default) — custom next_snapshot_and_version lambda.  Checks the Delta table "
+            "version first (O(1)); skips the pipeline run entirely when nothing changed, otherwise "
+            "reads the full source table.  Best for frequently-triggered pipelines on slowly-changing tables.\n"
+            "  full — built-in view-based apply_changes_from_snapshot.  Reads and materialises the "
+            "entire source table on every pipeline trigger regardless of changes.  Use as a stable "
+            "reference or when the custom lambda causes issues."
+        ),
     )
     args = vars(parser.parse_args())
 

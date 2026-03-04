@@ -138,14 +138,24 @@ class DataflowPipeline:
         Returns:
             bool: True if a view should be created, False otherwise.
         """
-        # if sourceDetails is provided and snapshot_format is delta, then create a view
-        # if next_snapshot_and_version is provided, then do not create a view
-        # otherwise create a view
+        # applyChangesFromSnapshot may not be set for non-snapshot specs (e.g. intpk).
+        _is_snapshot_spec = (
+            getattr(self, "applyChangesFromSnapshot", None) is not None
+            or (
+                self.dataflowSpec.sourceDetails
+                and self.dataflowSpec.sourceDetails.get("snapshot_format") == "delta"
+            )
+        )
+        # Custom lambda takes priority for snapshot specs: skip view creation so that
+        # apply_changes_from_snapshot() uses the lambda as its DLT source directly.
+        # For non-snapshot specs (e.g. intpk CDF streaming), always create the view.
+        if self.next_snapshot_and_version and _is_snapshot_spec:
+            return False
+        # snapshot_format="delta" → create a DLT view over the source Delta table and use it
+        # as the snapshot source (built-in full-scan path).
         if (self.dataflowSpec.sourceDetails and self.dataflowSpec.sourceDetails.get("snapshot_format") == "delta"):
             self.next_snapshot_and_version_from_source_view = True
             return True
-        elif self.next_snapshot_and_version:
-            return False
         return True
 
     def read(self):
@@ -459,7 +469,7 @@ class DataflowPipeline:
             (lambda latest_snapshot_version: self.next_snapshot_and_version(
                 latest_snapshot_version, self.dataflowSpec
             ))
-            if self.next_snapshot_and_version and not self.next_snapshot_and_version_from_source_view
+            if self.next_snapshot_and_version   # custom lambda takes priority over view
             else self.view_name
         )
 

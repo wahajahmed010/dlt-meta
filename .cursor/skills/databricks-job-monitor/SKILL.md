@@ -508,8 +508,27 @@ PYTHONPATH="$(pwd):$(pwd)/src" python demo/launch_lfc_demo.py \
   --cdc_qbc=cdc \
   --trigger_interval_min=5 \
   --profile=e2demofe \
-  --sequence_by_pk
+  --sequence_by_pk \
+  --snapshot_method=cdf
 ```
+
+#### `--snapshot_method` flag
+
+Controls how the `dtix` (LFC SCD2, no-PK) table is processed by the bronze DLT pipeline.
+
+| Value | Behaviour | When to use |
+|-------|-----------|-------------|
+| `cdf` **(default)** | Custom `next_snapshot_and_version` lambda. Checks the Delta table version first (O(1)). If nothing changed since the last run, skips immediately. If changed, reads the full table (O(n)). | Frequently-triggered pipelines where source changes infrequently. |
+| `full` | Built-in view-based `apply_changes_from_snapshot`. Reads and materialises the full source table on every trigger (O(n) always). | Stable reference; use if the lambda causes issues. |
+
+The value is passed as Spark conf `dtix_snapshot_method` to the bronze DLT pipeline; `init_sdp_meta_pipeline.py` reads it with `spark.conf.get("dtix_snapshot_method", "cdf")`.
+
+**How `cdf` mode works internally:**
+1. `init_sdp_meta_pipeline.py` defines `dtix_next_snapshot_and_version(latest_snapshot_version, dataflowSpec)`.
+2. It's passed as `bronze_next_snapshot_and_version` to `DataflowPipeline.invoke_dlt_pipeline`.
+3. `DataflowPipeline.is_create_view()` sees it's a snapshot spec with a custom lambda → returns `False` (no DLT view registered for `dtix`).
+4. `apply_changes_from_snapshot()` uses the lambda as the DLT source directly.
+5. At runtime: lambda does `DESCRIBE HISTORY <table> LIMIT 1` (O(1)), returns `None` if version unchanged, otherwise reads full table and renames `__START_AT`/`__END_AT` → `lfc_start_at`/`lfc_end_at`.
 
 The launcher prints a `run_id` at the end — save it for all subsequent monitoring, incremental
 runs, and cleanup.
@@ -769,7 +788,7 @@ clean. Here is the full trace so you can recognize the same pattern quickly:
       **Decision:** Clean up the failed run entirely and start a fresh launch. This is faster
       than waiting for selective full-refresh to complete on a pipeline with corrupted state.
 
-5. **Fourth launch** (`run_id: cb89a69bd30c43c29dbb433ecc6ec7fb`) — fresh start with fixed keys.  
+5. **Fourth launch** (`run_id: cb89a69bd30c43c29dbb433ecc6ec7fb`) — initial `--snapshot_method=full` baseline success.  
    The **setup job** (`sdp-meta-lfc-demo-cb89a69bd30c43c29dbb433ecc6ec7fb`) takes **~1 hour**
    because `lfcdemo-database.ipynb` waits for LFC gateway/ingestion pipelines to finish their
    initial full load. Once the setup job finishes it automatically triggers the downstream job.  
@@ -781,6 +800,62 @@ clean. Here is the full trace so you can recognize the same pattern quickly:
    ```bash
    python demo/launch_lfc_demo.py --profile=e2demofe --run_id=cb89a69bd30c43c29dbb433ecc6ec7fb
    ```
+
+6. **Adding `--snapshot_method=cdf` (Option B) — run `41a635c00c864a51bc27dd11ceb749c5`**
+
+   Added a `--snapshot_method` CLI flag to `launch_lfc_demo.py` with two options:
+   - `cdf` (default): custom `next_snapshot_and_version` lambda; O(1) version-check fast skip
+   - `full`: original view-based `apply_changes_from_snapshot` (O(n) always)
+
+   **Bug fixes encountered during testing:**
+
+   a. `AttributeError: 'DataflowPipeline' object has no attribute 'applyChangesFromSnapshot'`  
+      **Cause:** New `is_create_view()` logic accessed `self.applyChangesFromSnapshot` for all
+      specs (`intpk` doesn't have this attribute).  
+      **Fix:** Use `getattr(self, "applyChangesFromSnapshot", None)` in `is_create_view()`.
+
+   b. `TABLE_OR_VIEW_NOT_FOUND None.robert_lee_sqlserver_42093c22e.dtix`  
+      **Cause:** `dtix_next_snapshot_and_version` used `dataflowSpec.sourceDetails.get("source_catalog_prod")`
+      but DLT-Meta onboarding maps `source_catalog_prod` → `sourceDetails["catalog"]`.
+      The raw key `source_catalog_prod` no longer exists in the processed dataflowSpec.  
+      **Fix:** Changed to `dataflowSpec.sourceDetails.get("catalog")` and build
+      `catalog_prefix = f"{catalog}." if catalog else ""`.
+
+   **Results:**
+   - Initial run: `onboarding_job` SUCCESS, `bronze_dlt` SUCCESS, `silver_dlt` SUCCESS ✓
+   - Incremental run: `trigger_ingestion_and_wait` SUCCESS, `bronze_dlt` SUCCESS ✓
+   - `silver_dlt` on incremental FAILED with `DELTA_SOURCE_TABLE_IGNORE_CHANGES` on `intpk`
+     (see Known Issues below) — this is a **pre-existing** streaming issue unrelated to
+     `--snapshot_method`.
+
+   **Key DLT-Meta source details key mapping** (important for any custom lambda):
+   | `onboarding.json` key | `dataflowSpec.sourceDetails` key (after onboarding_job) |
+   |----------------------|--------------------------------------------------------|
+   | `source_catalog_prod` | `catalog` |
+   | `source_database` | `source_database` |
+   | `source_table` | `source_table` |
+   | `snapshot_format` | `snapshot_format` |
+
+---
+
+### `DELTA_SOURCE_TABLE_IGNORE_CHANGES` on silver `intpk` — **FIXED**
+
+**Error:** `[STREAM_FAILED] DELTA_SOURCE_TABLE_IGNORE_CHANGES: Detected a data update (MERGE) in source table at version N.`  
+**When:** Silver pipeline incremental run reads from bronze `intpk` as a streaming source.  
+**Cause:** Bronze `intpk` CDC (`apply_changes`) writes MERGE operations to the bronze Delta table. Delta streaming cannot read a table with non-additive writes (MERGE/UPDATE/DELETE) unless CDF or skipChangeCommits is configured.  
+**Fix (implemented):** Add `silver_reader_options: {"readChangeFeed": "true"}` to the `intpk` onboarding entry. Silver reads the Change Data Feed from bronze instead of the raw table files. CDF handles MERGE-producing sources correctly. The silver CDC config must also be CDF-aware:
+```python
+silver_reader_options = {"readChangeFeed": "true"}
+silver_cdc_apply_changes = {
+    "keys": ["pk"],
+    "sequence_by": "_commit_version",   # always use _commit_version with CDF
+    "scd_type": "1",
+    "apply_as_deletes": "_change_type = 'delete'",
+    "except_column_list": ["_change_type", "_commit_version", "_commit_timestamp"],
+}
+```
+**Files changed:** `demo/launch_lfc_demo.py` (`LFC_INTPK_SILVER_READER_OPTIONS`, `LFC_INTPK_SILVER_CDC_APPLY_CHANGES`) and `demo/lfcdemo-database.ipynb` cell 20.  
+**Verified:** Full test cycle (run `65b21620b71e4e46b3622d1ed1c85246`) — initial downstream SUCCESS, incremental `trigger_ingestion_and_wait` + `bronze_dlt` + `silver_dlt` all SUCCESS.
 
 ---
 
