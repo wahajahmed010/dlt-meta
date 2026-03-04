@@ -533,57 +533,96 @@ The value is passed as Spark conf `dtix_snapshot_method` to the bronze DLT pipel
 The launcher prints a `run_id` at the end — save it for all subsequent monitoring, incremental
 runs, and cleanup.
 
-### Monitoring after launch
+### Full test-cycle flow
 
-After a successful launch, two jobs run in sequence:
+```
+launch_lfc_demo.py
+  └─► Job 1 (setup)  ~1 hr   lfc_setup  ─runs lfcdemo-database.ipynb─► creates LFC pipelines + waits for full load
+                                                                         └─► triggers Job 2 when done
+         └─► Job 2 (downstream)  ~10 min   onboarding_job → bronze_dlt → silver_dlt
+                                                                           └─► SUCCESS → run incremental
+                  └─► Incremental job  ~5–8 min   trigger_ingestion → bronze_dlt → silver_dlt
+                                                                        └─► SUCCESS → TEST DONE → clean up
+```
 
-| Job | Purpose | How to find |
-|-----|---------|-------------|
-| Job 1 (setup) | Runs `lfcdemo-database.ipynb` — creates LFC pipelines, waits for tables | `Job` URL printed by launcher |
-| Job 2 (downstream) | `onboarding_job` → `bronze_dlt` → `silver_dlt` | `Downstream` URL printed by launcher |
+**Minimum monitoring scope:** You only need to watch **Job 2 (downstream)** and the **incremental job**.
+Job 1 (setup) runs `lfcdemo-database.ipynb` — that notebook only creates LFC pipelines and waits
+for the initial full load. Once Job 1 succeeds and triggers Job 2, you never need to look at
+`lfcdemo-database.ipynb` or Job 1 again. The incremental job does **not** re-run
+`lfcdemo-database.ipynb` — it runs `trigger_ingestion_and_wait.py` + bronze/silver directly.
 
-Job 1 (setup) takes **~1 hour**; it triggers Job 2 automatically when it succeeds.
-Job 2 (downstream) takes **~10 min** depending on data volume.
+**When to stop and clean up:**
+> **As soon as the incremental job completes with `SUCCESS`, the full test is done.**
+> You do not need to wait for Job 1 / `lfcdemo-database.ipynb` — it finished before Job 2 even
+> started. Run `cleanup_lfc_demo.py` immediately after the incremental succeeds.
+
 **Always monitor task-by-task** — don't poll only the top-level job state.
-Extract `SETUP_JOB_ID` and `DOWNSTREAM_JOB_ID` from the launcher's `Job :` and `Downstream:` output lines.
-Run the incremental only after Job 2 shows `SUCCESS`.
+Extract `DOWNSTREAM_JOB_ID` from the launcher's `Downstream:` output line; get the incremental
+job's downstream job ID from the incremental launcher output.
 
-**Poll loop (recommended):**
+**Poll loop (CLI-based — recommended, no PYTHONPATH needed):**
 
 ```python
-import sys, os, time
-sys.path.insert(0, os.path.join(os.getcwd(), "src"))
-from integration_tests.run_integration_tests import get_workspace_api_client
+import subprocess, json, time
 
-ws = get_workspace_api_client("e2demofe")
-DOWNSTREAM_JOB_ID = <downstream_job_id>   # from launcher output
+DOWNSTREAM_JOB_ID = "<downstream_job_id>"   # from launcher "Downstream:" line
+RUN_ID = "<run_id>"
+PROFILE = "e2demofe"
 
-for attempt in range(25):
-    time.sleep(60)
-    runs = list(ws.jobs.list_runs(job_id=DOWNSTREAM_JOB_ID, limit=1))
+for attempt in range(40):
+    result = subprocess.run(
+        ["databricks", "jobs", "list-runs", "--job-id", DOWNSTREAM_JOB_ID,
+         "--profile", PROFILE, "-o", "json"],
+        capture_output=True, text=True,
+    )
+    try:
+        data = json.loads(result.stdout)
+        runs = data if isinstance(data, list) else data.get("runs", [])
+    except Exception:
+        print(f"[{attempt+1}] parse error"); time.sleep(60); continue
+
     if not runs:
-        print(f"{attempt+1}m: Job2 not triggered yet"); continue
-    run = runs[0]; full = ws.jobs.get_run(run_id=run.run_id)
-    for t in (full.tasks or []):
-        print(f"  {t.task_key:25s}  {t.state.life_cycle_state}  {t.state.result_state or '—'}")
-    bronze_task = next((t for t in (full.tasks or []) if 'bronze' in t.task_key and t.pipeline_task), None)
-    if bronze_task:
-        pid = bronze_task.pipeline_task.pipeline_id
-        events = list(ws.pipelines.list_pipeline_events(pipeline_id=pid, max_results=30))
-        errors = [e for e in events if "ERROR" in str(e.level or "").upper()]
-        p = ws.pipelines.get(pipeline_id=pid)
-        latest = p.latest_updates[0] if p.latest_updates else None
-        print(f"  Bronze: {p.state}  {latest.state if latest else 'none'}")
-        if errors:
-            for e in errors[:1]:
-                for ex in (e.as_dict() or {}).get('error', {}).get('exceptions', []):
-                    print(f"  ERROR: {ex.get('class_name')}: {ex.get('message','')[:500]}")
-            break
-        if latest and str(latest.state) == "UpdateStateInfoState.COMPLETED":
-            print("Bronze COMPLETED"); break
-    if str(run.state.life_cycle_state) == "RunLifeCycleState.TERMINATED":
-        print(f"Job2 finished: {run.state.result_state}"); break
+        print(f"[{attempt+1}] downstream not triggered yet"); time.sleep(60); continue
+
+    r = runs[0]
+    run_id = r["run_id"]
+    lc = r.get("state", {}).get("life_cycle_state", "")
+    rr = r.get("state", {}).get("result_state", "—")
+    print(f"\n[{attempt+1}] run={run_id}  {lc}/{rr}")
+
+    # Get task-level detail
+    detail = subprocess.run(
+        ["databricks", "jobs", "get-run", str(run_id), "--profile", PROFILE, "-o", "json"],
+        capture_output=True, text=True,
+    )
+    try:
+        dr = json.loads(detail.stdout)
+        for t in dr.get("tasks", []):
+            tlc = t["state"].get("life_cycle_state", "")
+            trr = t["state"].get("result_state", "—")
+            print(f"  {t['task_key']:35s} {tlc}  {trr}")
+    except Exception:
+        pass
+
+    # Stop conditions — TERMINATED covers SUCCESS/FAILED; INTERNAL_ERROR is a separate
+    # terminal state (system-level failure, e.g. cluster never started).
+    if lc in ("TERMINATED", "INTERNAL_ERROR"):
+        if rr == "SUCCESS":
+            print(f"\nDownstream SUCCEEDED — ready to run incremental.")
+            print(f"  python demo/launch_lfc_demo.py --profile={PROFILE} --run_id={RUN_ID}")
+        else:
+            print(f"\nDownstream FAILED ({lc}/{rr}) — check task errors above.")
+        break
+
+    time.sleep(120)
+else:
+    print("Polling limit reached without termination — check job manually.")
 ```
+
+> **Stop conditions**: `life_cycle_state == "TERMINATED"` (task failure or success) and
+> `life_cycle_state == "INTERNAL_ERROR"` (system failure, e.g. cluster never started) are
+> both terminal. The loop must handle both — checking only `"TERMINATED"` will spin forever
+> if the job hits `INTERNAL_ERROR` (as seen in the stale-wheel MySQL failure).
 
 ### Error diagnosis playbook
 
@@ -599,6 +638,7 @@ for attempt in range(25):
 | `AttributeError: 'bytes' object has no attribute 'seekable'` | `ws.files.upload(contents=bytes)` — must wrap in `io.BytesIO` | Use `io.BytesIO(data)` |
 | `DUPLICATE_KEY_VIOLATION` — 9 rows for key `{"dt":"...","lfc_start_at":"{null, null}"}` | No-PK source table has multiple rows with same `dt` and null `__START_AT`; key `(dt, lfc_start_at)` is non-unique | Change key to `["dt", "lfc_end_at"]` — LFC's `__END_AT` is always unique per row (unique `__cdc_internal_value`). Verify: `COUNT(*) == COUNT(DISTINCT struct(dt, __END_AT))` in source |
 | `FileNotFoundError: Cannot read /Volumes/main/dlt_meta_dataflowspecs_lfc_...` | `trigger_ingestion_and_wait.py` uses stale `dlt_meta_` prefix | Line 32: change `dlt_meta_dataflowspecs_lfc_` → `sdp_meta_dataflowspecs_lfc_` |
+| `ResourceDoesNotExist: The specified pipeline <id> was not found` on `trigger_ingestion_and_wait` | The LFC ingestion pipeline for this run was deleted by a previous `cleanup_lfc_demo.py --include-all-lfc-pipelines` call. The incremental cannot trigger a deleted pipeline. | The run cannot be incrementally tested. Clean up this run and do a fresh launch if incremental validation is required. |
 
 ### Checking what's in the deployed wheel
 
@@ -676,27 +716,32 @@ launching again. Accumulating stale runs makes it hard to know which schema/tabl
 
 ### Running the incremental test
 
-After a successful full run, verify the incremental path by re-triggering bronze/silver with
-the latest LFC data:
+After Job 2 (downstream) succeeds, trigger the incremental to validate the end-to-end CDC path:
 
 ```bash
-python demo/launch_lfc_demo.py --profile=e2demofe --run_id=<run_id>
-```
-
-For example, with run `7bc7086ff8324a33b0f16b6e7ed872a7`:
-
-```bash
-python demo/launch_lfc_demo.py --profile=e2demofe --run_id=7bc7086ff8324a33b0f16b6e7ed872a7
+PYTHONPATH="$(pwd):$(pwd)/src" python demo/launch_lfc_demo.py \
+  --profile=e2demofe --run_id=<run_id>
 ```
 
 This:
 1. Creates (or reuses) an incremental job named `sdp-meta-lfc-demo-incremental-{run_id}`
-2. Triggers the LFC ingestion pipeline to ingest new rows from the source DB
-3. Waits for the ingestion pipeline update to `COMPLETED`
-4. Triggers bronze and silver DLT-Meta pipelines against the same run's schemas
+2. Runs `trigger_ingestion_and_wait.py` — triggers the LFC ingestion pipeline and waits for `COMPLETED`
+3. Runs bronze and silver DLT-Meta pipelines against the same run's schemas
 
-Monitor the incremental run the same way as the initial setup run, using `DOWNSTREAM_JOB_ID` from
-the incremental job output.
+Monitor the incremental job using the same CLI poll loop as Job 2, with the `DOWNSTREAM_JOB_ID`
+printed by the incremental launcher.
+
+**Once the incremental job shows `SUCCESS` → the test is complete.**
+
+```bash
+# As soon as incremental SUCCESS is confirmed, clean up immediately:
+PYTHONPATH="$(pwd):$(pwd)/src" python demo/cleanup_lfc_demo.py \
+  --profile=e2demofe --run_id=<run_id> --include-all-lfc-pipelines
+```
+
+Do **not** wait for Job 1 / `lfcdemo-database.ipynb` — it is a one-time setup runner that already
+finished long before the incremental started. There is nothing left to wait for once incremental
+succeeds.
 
 **Verify incremental rows were written:**
 
@@ -885,6 +930,9 @@ All runs: `--snapshot_method=cdf`, `--sequence_by_pk`, `--cdc_qbc=cdc`. Bronze a
 | **Downstream job** `sdp-meta-lfc-demo-{run_id}-downstream` — `onboarding_job` → `bronze_dlt` → `silver_dlt` | **~10 min** (data-dependent) |
 | Incremental run (LFC trigger + bronze + silver) | ~5–8 min |
 
+**Minimum wait to finish the test:** ~1 hr 20 min total
+(1 hr setup job + 10 min downstream + 5–8 min incremental).
+
 **Do not wait for the setup job to finish before starting to monitor.** Poll each job's tasks
 individually as they progress — the downstream job starts automatically as soon as the setup job
 succeeds, so you can start watching for it well before the 1-hour mark.
@@ -893,37 +941,63 @@ succeeds, so you can start watching for it well before the 1-hour mark.
 `sdp-meta-lfc-demo-{run_id}-downstream`; its URL is printed by the launcher on the `Downstream:`
 line. Check task-level status, not just the overall job state:
 
-```python
-import sys, os, time
-sys.path.insert(0, os.path.join(os.getcwd(), "src"))
-from integration_tests.run_integration_tests import get_workspace_api_client
+> **As soon as the incremental job is `SUCCESS`, start cleanup. Do not wait for anything else.**
+> `lfcdemo-database.ipynb` (Job 1 / setup) already finished before Job 2 started.
+> The incremental does not re-run it — `cleanup_lfc_demo.py` can run the moment incremental succeeds.
 
-ws = get_workspace_api_client("e2demofe")
-DOWNSTREAM_JOB_ID = 808917810045282   # from launcher "Downstream:" line
+```python
+import subprocess, json, time
+
+DOWNSTREAM_JOB_ID = "808917810045282"   # from launcher "Downstream:" line
 RUN_ID = "cb89a69bd30c43c29dbb433ecc6ec7fb"
+PROFILE = "e2demofe"
 
 _start = time.time()
-while True:
+for attempt in range(40):
     elapsed = int(time.time() - _start)
-    runs = list(ws.jobs.list_runs(job_id=DOWNSTREAM_JOB_ID, limit=1))
+    result = subprocess.run(
+        ["databricks", "jobs", "list-runs", "--job-id", DOWNSTREAM_JOB_ID,
+         "--profile", PROFILE, "-o", "json"],
+        capture_output=True, text=True,
+    )
+    try:
+        data = json.loads(result.stdout)
+        runs = data if isinstance(data, list) else data.get("runs", [])
+    except Exception:
+        print(f"[{elapsed}s] parse error"); time.sleep(60); continue
+
     if not runs:
-        print(f"[{elapsed:>4}s] downstream not triggered yet"); time.sleep(60); continue
-    run = runs[0]
-    full = ws.jobs.get_run(run_id=run.run_id)
-    lc = str(run.state.life_cycle_state)
-    rr = str(run.state.result_state or "—")
-    print(f"\n[{elapsed:>4}s] downstream run={run.run_id}  {lc}/{rr}")
-    for t in (full.tasks or []):
-        ts = t.state
-        print(f"  {t.task_key:35s} {str(ts.life_cycle_state):25s} {str(ts.result_state or '—')}")
-    if "TERMINATED" in lc:
-        if "SUCCESS" in rr:
+        print(f"[{elapsed}s] downstream not triggered yet"); time.sleep(60); continue
+
+    r = runs[0]
+    run_id = r["run_id"]
+    lc = r.get("state", {}).get("life_cycle_state", "")
+    rr = r.get("state", {}).get("result_state", "—")
+    print(f"\n[{elapsed}s] run={run_id}  {lc}/{rr}")
+
+    detail = subprocess.run(
+        ["databricks", "jobs", "get-run", str(run_id), "--profile", PROFILE, "-o", "json"],
+        capture_output=True, text=True,
+    )
+    try:
+        for t in json.loads(detail.stdout).get("tasks", []):
+            tlc = t["state"].get("life_cycle_state", "")
+            trr = t["state"].get("result_state", "—")
+            print(f"  {t['task_key']:35s} {tlc}  {trr}")
+    except Exception:
+        pass
+
+    # Both TERMINATED and INTERNAL_ERROR are terminal states — check both.
+    # INTERNAL_ERROR = system failure (e.g. cluster never started); it never
+    # transitions to TERMINATED, so checking only TERMINATED causes an infinite loop.
+    if lc in ("TERMINATED", "INTERNAL_ERROR"):
+        if rr == "SUCCESS":
             print("\nDownstream SUCCEEDED — ready to run incremental.")
-            print(f"  python demo/launch_lfc_demo.py --profile=e2demofe --run_id={RUN_ID}")
+            print(f"  python demo/launch_lfc_demo.py --profile={PROFILE} --run_id={RUN_ID}")
         else:
-            print(f"\nDownstream FAILED: {rr} — check errors above.")
+            print(f"\nDownstream FAILED ({lc}/{rr}) — check task errors above.")
         break
-    time.sleep(60)
+    time.sleep(120)
 ```
 
 ---
