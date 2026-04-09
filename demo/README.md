@@ -1,13 +1,93 @@
  # [SDP-META](https://github.com/databrickslabs/dlt-meta) DEMOs
- 1. [DAIS 2023 DEMO](#dais-2023-demo): Showcases SDP-META's capabilities of creating Bronze and Silver pipelines with initial and incremental mode automatically.
- 2. [Databricks Techsummit Demo](#databricks-tech-summit-fy2024-demo): 100s of data sources ingestion in bronze and silver pipelines automatically.
- 3. [Append FLOW Autoloader Demo](#append-flow-autoloader-file-metadata-demo): Write to same target from multiple sources using [dlt.append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#append-flows)  and adding [File metadata column](https://docs.databricks.com/en/ingestion/file-metadata-column.html)
- 4. [Append FLOW Eventhub Demo](#append-flow-eventhub-demo): Write to same target from multiple sources using [dlt.append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#append-flows)  and adding [File metadata column](https://docs.databricks.com/en/ingestion/file-metadata-column.html)
- 5. [Silver Fanout Demo](#silver-fanout-demo): This demo showcases the implementation of fanout architecture in the silver layer.
- 6. [Apply Changes From Snapshot Demo](#apply-changes-from-snapshot-demo): This demo showcases the implementation of ingesting from snapshots in bronze layer
- 7. [Lakeflow Declarative Pipelines Sink Demo](#lakeflow-declarative-pipelines-sink-demo): This demo showcases the implementation of write to external sinks like delta and kafka
- 8. [DAB Demo](#dab-demo): This demo showcases how to use Databricks Assets Bundles with sdp-meta
+ 1. [Interactive Demo (Notebook)](#interactive-demo-notebook): **Start here.** A fully self-contained Databricks notebook covering all SDP-META features end-to-end — no CLI required.
+ 2. [DAIS 2023 DEMO](#dais-2023-demo): Showcases SDP-META's capabilities of creating Bronze and Silver pipelines with initial and incremental mode automatically.
+ 3. [Databricks Techsummit Demo](#databricks-tech-summit-fy2024-demo): 100s of data sources ingestion in bronze and silver pipelines automatically.
+ 4. [Append FLOW Autoloader Demo](#append-flow-autoloader-file-metadata-demo): Write to same target from multiple sources using [dlt.append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#append-flows)  and adding [File metadata column](https://docs.databricks.com/en/ingestion/file-metadata-column.html)
+ 5. [Append FLOW Eventhub Demo](#append-flow-eventhub-demo): Write to same target from multiple sources using [dlt.append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#append-flows)  and adding [File metadata column](https://docs.databricks.com/en/ingestion/file-metadata-column.html)
+ 6. [Silver Fanout Demo](#silver-fanout-demo): This demo showcases the implementation of fanout architecture in the silver layer.
+ 7. [Apply Changes From Snapshot Demo](#apply-changes-from-snapshot-demo): This demo showcases the implementation of ingesting from snapshots in bronze layer
+ 8. [Lakeflow Declarative Pipelines Sink Demo](#lakeflow-declarative-pipelines-sink-demo): This demo showcases the implementation of write to external sinks like delta and kafka
+ 9. [DAB Demo](#dab-demo): This demo showcases how to use Databricks Assets Bundles with sdp-meta
 
+
+# Interactive Demo (Notebook)
+
+**Recommended starting point** — a single Databricks notebook that walks through all SDP-META features
+end-to-end with no CLI setup required.
+
+**Notebook:** [`demo/SDP_META_INTERACTIVE_DEMO.py`](SDP_META_INTERACTIVE_DEMO.py)
+
+## What It Covers
+
+| Stage | Feature |
+|-------|---------|
+| 1 | Setup — UC catalog, schemas, volume, config files, synthetic data |
+| 2 | Onboarding — JSON → DataflowSpec tables (`bronze_dataflowspec`, `silver_dataflowspec`) |
+| 3 | Pipeline creation and first run (fully automated via Databricks SDK) |
+| 4 | Validate initial Bronze + Silver tables, quarantine tables, SCD Type 2 history |
+| 5 | Add new feeds (Products & Stores) without modifying the pipeline |
+| 6 | Incremental CDC load (Insert / Update / Delete) |
+| 7 | Validate incremental results — `__START_AT` / `__END_AT` history |
+| 8 | Append Flow — multi-source ingestion with file metadata columns |
+| 9 | Apply Changes From Snapshot — SCD Type 1 & 2 from CSV/Delta snapshots |
+| 10 | DLT Sink — write Bronze output to an external Delta table |
+
+## Features Demonstrated
+
+- Metadata-driven onboarding (JSON → DataflowSpec → generic pipeline)
+- CloudFiles (Autoloader) ingestion with schema enforcement
+- Data quality rules: `expect_or_drop` and `expect_or_quarantine`
+- Quarantine tables for bad records
+- CDC with `apply_changes` (SCD Type 2)
+- Liquid clustering (`cluster_by_auto`)
+- Silver transformations via JSON (column selection, expressions)
+- Adding new feeds without pipeline code changes
+- `dlt.append_flow` — multiple sources → same target table
+- `_metadata.file_name` / `_metadata.file_path` file metadata columns
+- `apply_changes_from_snapshot` — snapshot-based SCD Type 1 & 2
+- `dlt.create_sink` — write to external Delta destinations
+
+## Prerequisites
+
+- Databricks workspace with Unity Catalog enabled
+- A UC catalog you have `CREATE` privileges on
+
+## Steps
+
+1. Import the notebook into your Databricks workspace:
+   - In the sidebar click **Workspace** → **Import**
+   - Upload `demo/SDP_META_INTERACTIVE_DEMO.py` or paste the GitHub raw URL
+
+2. Open the notebook and fill in the widgets at the top:
+
+   | Widget | Default | Description |
+   |--------|---------|-------------|
+   | `git_branch` | `main` | Branch to install SDP-META from |
+   | `uc_catalog_name` | `sdp_meta_demo` | UC catalog for the demo |
+   | `uc_schema_name` | `retail_data` | Schema within the catalog |
+   | `data_source` | `dbdatagen` | `dbdatagen` (synthetic) or `github` (download from repo) |
+
+3. Click **Run All**. The notebook:
+   - Installs SDP-META and (if selected) `dbldatagen` via `%pip install`
+   - Creates all UC resources, config files, and demo data automatically
+   - Creates and starts the Lakeflow Declarative Pipeline via the Databricks SDK
+   - Blocks and polls until each pipeline run completes before moving to the next stage
+   - Prints live pipeline state updates and the pipeline URL for each run
+
+> No manual pipeline UI interactions required — the notebook is fully automated end-to-end.
+
+## Data Source Options
+
+| Option | Description |
+|--------|-------------|
+| `dbdatagen` | Generates synthetic retail data using [dbldatagen](https://github.com/databrickslabs/dbldatagen). No internet access required after install. |
+| `github` | Downloads sample CSV data directly from the [dlt-meta repo](https://github.com/databrickslabs/dlt-meta/tree/main/demo/resources). Requires outbound internet access from the cluster. |
+
+## Cleanup
+
+Uncomment and run the cleanup cell at the bottom of the notebook to drop all schemas and the catalog created during the demo.
+
+---
 
 # DAIS 2023 DEMO
 ## [DAIS 2023 Session Recording](https://www.youtube.com/watch?v=WYv5haxLlfA)
