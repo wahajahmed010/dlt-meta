@@ -100,7 +100,10 @@ git_url = (
     f"git+https://github.com/databrickslabs/"
     f"dlt-meta.git@{dbutils.widgets.get('git_branch')}"
 )
-%pip install $git_url dbldatagen # noqa: E999
+# dbldatagen is only needed for the "dbdatagen" data source option
+extra_packages = " dbldatagen" if data_source == "dbdatagen" else ""
+packages = git_url + extra_packages
+%pip install $packages  # noqa: E999
 dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -153,13 +156,54 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
+import csv
 import json
 import os
+import time
+
+from pyspark.sql import Row
+
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.pipelines import (
+    NotebookLibrary,
+    PipelineLibrary,
+)
+from databricks.sdk.service.workspace import (
+    ExportFormat, Language,
+)
 
 git_branch = dbutils.widgets.get("git_branch")
 uc_catalog_name = dbutils.widgets.get("uc_catalog_name")
 uc_schema_name = dbutils.widgets.get("uc_schema_name")
 data_source = dbutils.widgets.get("data_source")
+
+w = WorkspaceClient()
+
+
+def run_pipeline_and_wait(w, pipeline_id, label=""):
+    """Start a pipeline update and block until it completes."""
+    resp = w.pipelines.start_update(pipeline_id=pipeline_id)
+    update_id = resp.update_id
+    host = w.config.host.rstrip("/")
+    pipeline_url = f"{host}/pipelines/{pipeline_id}/updates/{update_id}"
+    tag = f" ({label})" if label else ""
+    print(f"Pipeline started{tag} — update_id: {update_id}")
+    print(f"  URL: {pipeline_url}")
+    while True:
+        info = w.pipelines.get_update(
+            pipeline_id=pipeline_id, update_id=update_id
+        )
+        state = info.update.state.value
+        print(f"  state: {state}")
+        if state in ("COMPLETED", "FAILED", "CANCELED"):
+            break
+        time.sleep(20)
+    if state != "COMPLETED":
+        raise RuntimeError(
+            f"Pipeline ended with state: {state}. "
+            f"Check the pipeline UI for details: {pipeline_url}"
+        )
+    print("Pipeline completed successfully.")
 
 # COMMAND ----------
 
@@ -170,24 +214,32 @@ data_source = dbutils.widgets.get("data_source")
 
 bronze_schema = f"{uc_schema_name}_bronze"
 silver_schema = f"{uc_schema_name}_silver"
+# DLT direct publishing mode requires a pipeline-level target schema.
+# This schema is a placeholder only — every table sets its own schema
+# via DataflowSpec so nothing is ever written here.
+pipeline_target_schema = f"{uc_schema_name}_pipeline_default"
 
 spark.sql(f"CREATE CATALOG IF NOT EXISTS {uc_catalog_name}")
 spark.sql(f"USE CATALOG {uc_catalog_name}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {uc_schema_name}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {bronze_schema}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {silver_schema}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {pipeline_target_schema}")
 spark.sql(f"USE SCHEMA {uc_schema_name}")
 spark.sql("CREATE VOLUME IF NOT EXISTS config")
 
 uc_volume_path = (
     f"/Volumes/{uc_catalog_name}/{uc_schema_name}/config"
 )
+pipeline_id_file = f"{uc_volume_path}/pipeline_id.txt"
+pipeline_name = f"sdp_meta_demo_{uc_schema_name}"
 
-print(f"Catalog        : {uc_catalog_name}")
-print(f"Config Schema  : {uc_catalog_name}.{uc_schema_name}")
-print(f"Bronze Schema  : {uc_catalog_name}.{bronze_schema}")
-print(f"Silver Schema  : {uc_catalog_name}.{silver_schema}")
-print(f"Volume         : {uc_volume_path}")
+print(f"Catalog          : {uc_catalog_name}")
+print(f"Config Schema    : {uc_catalog_name}.{uc_schema_name}")
+print(f"Bronze Schema    : {uc_catalog_name}.{bronze_schema}")
+print(f"Silver Schema    : {uc_catalog_name}.{silver_schema}")
+print(f"Pipeline Default : {uc_catalog_name}.{pipeline_target_schema}")
+print(f"Volume           : {uc_volume_path}")
 
 # COMMAND ----------
 
@@ -499,7 +551,13 @@ if data_source == "dbdatagen":
     INCR_CUSTOMERS = 100
     INCR_PRODUCTS = 10
     INCR_STORES = 2
+    INCR_TRANSACTIONS = 200
 
+    # --- Initial load (no Op column — full load, not CDC) ---
+    # Op will be NULL in Bronze for the initial dataset; this is intentional.
+    # The DDL defines Op: string to match the DMS schema, but initial full-load
+    # files don't carry an Op value. silver_cdc_apply_changes treats NULL Op
+    # as an insert (apply_as_deletes: "Op = 'D'" won't match NULL).
     # --- Customers initial load ---
     customers_df = (
         dg.DataGenerator(spark, name="customers",
@@ -682,14 +740,15 @@ if data_source == "dbdatagen":
 
     incr_txn_df = (
         dg.DataGenerator(spark, name="incr_transactions",
-                         rowcount=200, seedColumnName="_id")
+                         rowcount=INCR_TRANSACTIONS,
+                         seedColumnName="_id")
         .withColumn("Op", StringType(), values=["I"])
         .withColumn("dmsTimestamp", StringType(),
                     values=[incr_ts])
         .withColumn("transaction_id", IntegerType(),
                     minValue=NUM_TRANSACTIONS + 1,
-                    maxValue=NUM_TRANSACTIONS + 200,
-                    uniqueValues=200)
+                    maxValue=NUM_TRANSACTIONS + INCR_TRANSACTIONS,
+                    uniqueValues=INCR_TRANSACTIONS)
         .withColumn("transaction_date", DateType(),
                     begin="2022-06-25", end="2022-07-10")
         .withColumn("customer_id", IntegerType(),
@@ -710,7 +769,7 @@ if data_source == "dbdatagen":
     (incr_txn_df.coalesce(1).write.mode("overwrite")
      .option("header", "true")
      .csv(f"{incremental_data_path}/transactions"))
-    print("  Generated 200 incremental transactions")
+    print(f"  Generated {INCR_TRANSACTIONS} incremental transactions")
 
     print("\nAll data generated with dbdatagen.")
 
@@ -990,7 +1049,6 @@ iot_events = [
 ]
 
 iot_path = f"{iot_data_dir}/iot_batch_1.csv"
-import csv
 with open(iot_path, "w", newline="") as fh:
     writer = csv.DictWriter(
         fh, fieldnames=iot_events[0].keys()
@@ -1154,7 +1212,6 @@ onboarding_json = [
             "cloudFiles.rescuedDataColumn": "_rescued_data",
             "header": "true",
         },
-        "bronze_cluster_by": ["transaction_date"],
         "bronze_cluster_by_auto": True,
         "bronze_data_quality_expectations_json_prod": (
             f"{dqe_path}/transactions.json"
@@ -1305,54 +1362,12 @@ runner_content = (
     "\n"
     "# COMMAND ----------\n"
     "\n"
-    "# DBTITLE 1,Snapshot reader for apply_changes_from_snapshot\n"
-    "import dlt\n"
-    "from databricks.labs.sdp_meta.dataflow_spec "
-    "import BronzeDataflowSpec\n"
-    "\n"
-    "\n"
-    "def exist(path):\n"
-    "    try:\n"
-    "        return dbutils.fs.ls(path) is not None\n"
-    "    except Exception:\n"
-    "        return False\n"
-    "\n"
-    "\n"
-    "def next_snapshot_and_version("
-    "latest_snapshot_version, dataflow_spec):\n"
-    "    latest_snapshot_version = "
-    "latest_snapshot_version or 0\n"
-    "    next_version = latest_snapshot_version + 1\n"
-    "    bronze_dataflow_spec: BronzeDataflowSpec "
-    "= dataflow_spec\n"
-    "    options = bronze_dataflow_spec"
-    ".readerConfigOptions\n"
-    "    snapshot_format = bronze_dataflow_spec"
-    '.sourceDetails["snapshot_format"]\n'
-    "    snapshot_root_path = bronze_dataflow_spec"
-    ".sourceDetails['path']\n"
-    '    snapshot_path = f"{snapshot_root_path}'
-    '{next_version}.csv"\n'
-    "    if exist(snapshot_path):\n"
-    "        snapshot = spark.read.format("
-    "snapshot_format).options(**options)"
-    ".load(snapshot_path)\n"
-    "        return (snapshot, next_version)\n"
-    "    else:\n"
-    "        return None\n"
-    "\n"
-    "\n"
-    "# COMMAND ----------\n"
-    "\n"
     'layer = spark.conf.get("layer", None)\n'
     "\n"
     "from databricks.labs.sdp_meta.dataflow_pipeline "
     "import DataflowPipeline\n"
     "DataflowPipeline.invoke_dlt_pipeline(\n"
     "    spark, layer,\n"
-    "    bronze_next_snapshot_and_version="
-    "next_snapshot_and_version,\n"
-    "    silver_next_snapshot_and_version=None,\n"
     ")\n"
 )
 
@@ -1360,12 +1375,6 @@ encoded = base64.b64encode(
     runner_content.encode("utf-8")
 ).decode("utf-8")
 
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.workspace import (
-    ExportFormat, Language,
-)
-
-w = WorkspaceClient()
 w.workspace.mkdirs(notebook_dir)
 w.workspace.import_(
     content=encoded,
@@ -1380,27 +1389,13 @@ print(f"Runner notebook created: {runner_notebook_path}")
 
 # COMMAND ----------
 # MAGIC %md
-# MAGIC ### 3.2 Create the Pipeline
+# MAGIC ### 3.2 Create and Start the Pipeline
 # MAGIC
-# MAGIC Follow the
-# MAGIC [Databricks pipeline tutorial](https://docs.databricks.com/aws/en/getting-started/data-pipeline-get-started#step-1-create-a-pipeline)
-# MAGIC to create a new pipeline:
-# MAGIC
-# MAGIC 1. In the sidebar, click **New** → **ETL Pipeline**
-# MAGIC 2. Give the pipeline a name, e.g. `sdp_meta_demo`
-# MAGIC 3. Set **Default catalog** to your demo catalog
-# MAGIC 4. **Do NOT set a Default schema** — Bronze and Silver use
-# MAGIC    separate schemas defined in the DataflowSpec metadata
-# MAGIC 5. Under **Source code**, click **Add source code** →
-# MAGIC    **Select from workspace** and choose the runner notebook
-# MAGIC    path printed below
-# MAGIC 6. Scroll to **Configuration** and add the key-value pairs
-# MAGIC    printed below (click **Add configuration** for each one)
-# MAGIC 7. Click **Create** then **Start**
-# MAGIC
-# MAGIC > **Docs:**
-# MAGIC > [Pipeline tutorial](https://docs.databricks.com/aws/en/getting-started/data-pipeline-get-started) |
-# MAGIC > [SDP-META manual setup](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_manual/)
+# MAGIC The cell below creates the Lakeflow Declarative Pipeline
+# MAGIC programmatically using the Databricks SDK, then starts it and
+# MAGIC waits for completion. The pipeline ID is persisted to the UC
+# MAGIC Volume so later stages can trigger reruns without manual
+# MAGIC interaction.
 
 # COMMAND ----------
 
@@ -1422,19 +1417,41 @@ pipeline_config = {
     "sdp_meta_whl": git_url_for_pip,
 }
 
-print("=" * 60)
-print("PIPELINE CONFIGURATION")
-print("=" * 60)
-print(f"Notebook path : {runner_notebook_path}")
-print(f"Target catalog: {uc_catalog_name}")
-print(
-    f"NOTE: Do NOT set a Target Schema. Bronze and Silver "
-    f"use separate schemas ({bronze_schema}, {silver_schema}) "
-    f"defined in the DataflowSpec metadata."
-)
-print("\nConfiguration key-value pairs:")
-print(json.dumps(pipeline_config, indent=2))
-print("=" * 60)
+# Create pipeline (idempotent: skip if already exists)
+existing = [
+    p for p in w.pipelines.list_pipelines()
+    if p.name == pipeline_name
+]
+if existing:
+    pipeline_id = existing[0].pipeline_id
+    print(f"Reusing existing pipeline: {pipeline_id}")
+else:
+    created = w.pipelines.create(
+        name=pipeline_name,
+        catalog=uc_catalog_name,
+        # DLT direct publishing mode requires a pipeline-level target schema.
+        # DataflowPipeline sets catalog+schema on every @dlt.table() call
+        # from DataflowSpec (bronze_database_prod / silver_database_prod),
+        # so this target is never used for actual routing.
+        # A dedicated placeholder schema is used to keep it separate from
+        # the DataflowSpec metadata schema and the Bronze/Silver data schemas.
+        schema=bronze_schema,
+        libraries=[
+            PipelineLibrary(
+                notebook=NotebookLibrary(path=runner_notebook_path)
+            )
+        ],
+        configuration=pipeline_config,
+        development=True,
+    )
+    pipeline_id = created.pipeline_id
+    print(f"Pipeline created: {pipeline_id}")
+
+with open(pipeline_id_file, "w") as fh:
+    fh.write(pipeline_id)
+print(f"Pipeline ID saved to: {pipeline_id_file}")
+
+run_pipeline_and_wait(w, pipeline_id, label="initial load")
 
 # COMMAND ----------
 
@@ -1442,10 +1459,8 @@ print("=" * 60)
 # MAGIC ---
 # MAGIC ## Stage 4: Validate Initial Load
 # MAGIC
-# MAGIC After running the pipeline, validate that Bronze and Silver
-# MAGIC tables were created correctly.
-# MAGIC
-# MAGIC > **Run the pipeline from Stage 3 before continuing.**
+# MAGIC After the pipeline completes in Stage 3, validate that Bronze
+# MAGIC and Silver tables were created correctly.
 # MAGIC
 # MAGIC ### Data Flow
 # MAGIC ```
@@ -1473,8 +1488,6 @@ print("=" * 60)
 # COMMAND ----------
 
 # DBTITLE 1,Pipeline Data Flow Summary (Initial Load)
-from pyspark.sql import Row
-
 summary_rows = []
 for table in ["customers", "transactions"]:
     src_dir = f"{data_path}/{table}"
@@ -1719,6 +1732,9 @@ stores_feed = {
     ),
 }
 
+with open(onboarding_file_path, "r") as fh:
+    onboarding_json = json.load(fh)
+
 onboarding_json.extend([products_feed, stores_feed])
 
 with open(onboarding_file_path, "w") as fh:
@@ -1781,11 +1797,14 @@ display(
 # MAGIC %md
 # MAGIC ### 5.4 Re-run the Pipeline
 # MAGIC
-# MAGIC Go back to your Lakeflow Declarative Pipeline and click **Start**.
 # MAGIC The same generic pipeline automatically picks up Products and
-# MAGIC Stores from the updated DataflowSpec.
-# MAGIC
-# MAGIC > **No pipeline code changes needed!**
+# MAGIC Stores from the updated DataflowSpec — no pipeline code changes needed.
+
+# COMMAND ----------
+
+with open(pipeline_id_file, "r") as fh:
+    pipeline_id = fh.read().strip()
+run_pipeline_and_wait(w, pipeline_id, label="add products & stores")
 
 # COMMAND ----------
 
@@ -1798,8 +1817,6 @@ display(
 # COMMAND ----------
 
 # DBTITLE 1,Pipeline Data Flow Summary (4 Feeds)
-from pyspark.sql import Row
-
 all_tables = ["customers", "transactions", "products", "stores"]
 summary_rows = []
 for table in all_tables:
@@ -1952,8 +1969,13 @@ for domain in ["customers", "transactions", "stores", "products"]:
 # MAGIC %md
 # MAGIC ### 6.3 Re-run the Pipeline
 # MAGIC
-# MAGIC Go to your Lakeflow Declarative Pipeline and click **Start**.
-# MAGIC CloudFiles (Autoloader) will automatically detect the new files.
+# MAGIC CloudFiles (Autoloader) automatically detects the new incremental files.
+
+# COMMAND ----------
+
+with open(pipeline_id_file, "r") as fh:
+    pipeline_id = fh.read().strip()
+run_pipeline_and_wait(w, pipeline_id, label="incremental CDC")
 
 # COMMAND ----------
 
@@ -1989,8 +2011,6 @@ for domain in ["customers", "transactions", "stores", "products"]:
 # COMMAND ----------
 
 # DBTITLE 1,Pipeline Data Flow Summary (After Incremental)
-from pyspark.sql import Row
-
 all_tables = ["customers", "transactions", "products", "stores"]
 summary_rows = []
 for table in all_tables:
@@ -2205,6 +2225,9 @@ append_flow_feed = {
     ),
 }
 
+with open(onboarding_file_path, "r") as fh:
+    onboarding_json = json.load(fh)
+
 onboarding_json.append(append_flow_feed)
 
 with open(onboarding_file_path, "w") as fh:
@@ -2234,11 +2257,14 @@ print("Onboarding updated with append flow orders!")
 # MAGIC %md
 # MAGIC ### 8.3 Re-run the Pipeline
 # MAGIC
-# MAGIC Go to your Lakeflow Declarative Pipeline and click **Start**.
-# MAGIC The pipeline will now also process the **orders** table from two
+# MAGIC The pipeline now also processes the **orders** table from two
 # MAGIC sources via append flow.
-# MAGIC
-# MAGIC > After pipeline completes, run cells below to validate.
+
+# COMMAND ----------
+
+with open(pipeline_id_file, "r") as fh:
+    pipeline_id = fh.read().strip()
+run_pipeline_and_wait(w, pipeline_id, label="append flow orders")
 
 # COMMAND ----------
 
@@ -2347,7 +2373,7 @@ display(spark.sql(
 
 snap_products_feed = {
     "data_flow_id": "301",
-    "data_flow_group": "A1",
+    "data_flow_group": "SNAP",
     "source_system": "delta",
     "source_format": "snapshot",
     "source_details": {
@@ -2356,6 +2382,9 @@ snap_products_feed = {
         "source_table": snap_products_source_table,
         "source_database": uc_schema_name,
     },
+    # Snapshot feeds use a fully-qualified "catalog.schema" string in
+    # bronze_database_prod (no separate bronze_catalog_prod field).
+    # This differs from cloudFiles feeds which split catalog and schema.
     "bronze_database_prod": (
         f"{uc_catalog_name}.{bronze_schema}"
     ),
@@ -2380,7 +2409,7 @@ snap_products_feed = {
 
 snap_stores_feed = {
     "data_flow_id": "302",
-    "data_flow_group": "A1",
+    "data_flow_group": "SNAP",
     "source_system": "delta",
     "source_format": "snapshot",
     "source_details": {
@@ -2390,6 +2419,9 @@ snap_stores_feed = {
         "snapshot_format": "csv",
     },
     "bronze_reader_options": {"header": "true"},
+    # Snapshot feeds use a fully-qualified "catalog.schema" string in
+    # bronze_database_prod (no separate bronze_catalog_prod field).
+    # This differs from cloudFiles feeds which split catalog and schema.
     "bronze_database_prod": (
         f"{uc_catalog_name}.{bronze_schema}"
     ),
@@ -2410,6 +2442,9 @@ snap_stores_feed = {
         "/snapshot_silver_transformations.json"
     ),
 }
+
+with open(onboarding_file_path, "r") as fh:
+    onboarding_json = json.load(fh)
 
 onboarding_json.extend([snap_products_feed, snap_stores_feed])
 
@@ -2441,17 +2476,159 @@ print("Onboarding updated with snapshot feeds!")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 9.4 Re-run the Pipeline
+# MAGIC ### 9.4 Create Snapshot Runner Notebook & Pipeline
 # MAGIC
-# MAGIC Go to your Lakeflow Declarative Pipeline and click **Start**.
-# MAGIC The pipeline will process the initial snapshot (LOAD_1).
-# MAGIC
-# MAGIC > After pipeline completes, run cells below to validate.
+# MAGIC Snapshot ingestion requires a `next_snapshot_and_version` callback
+# MAGIC passed to `invoke_dlt_pipeline`. A separate runner notebook and
+# MAGIC pipeline are created for the **SNAP** data-flow group.
+
+# COMMAND ----------
+
+snapshot_notebook_name = "sdp_meta_snapshot_runner"
+
+snapshot_runner_content = (
+    "# Databricks notebook source\n"
+    'sdp_meta_whl = spark.conf.get("sdp_meta_whl")\n'
+    "%pip install $sdp_meta_whl  # noqa: E999\n"
+    "\n"
+    "# COMMAND ----------\n"
+    "\n"
+    "# DBTITLE 1,Snapshot reader for apply_changes_from_snapshot\n"
+    "import dlt\n"
+    "from databricks.labs.sdp_meta.dataflow_spec "
+    "import BronzeDataflowSpec\n"
+    "\n"
+    "\n"
+    "def exist(path):\n"
+    "    try:\n"
+    "        return dbutils.fs.ls(path) is not None\n"
+    "    except Exception:\n"
+    "        return False\n"
+    "\n"
+    "\n"
+    "def next_snapshot_and_version("
+    "latest_snapshot_version, dataflow_spec):\n"
+    "    latest_snapshot_version = "
+    "latest_snapshot_version or 0\n"
+    "    next_version = latest_snapshot_version + 1\n"
+    "    bronze_dataflow_spec: BronzeDataflowSpec "
+    "= dataflow_spec\n"
+    "    options = bronze_dataflow_spec"
+    ".readerConfigOptions\n"
+    "    snapshot_format = bronze_dataflow_spec"
+    '.sourceDetails["snapshot_format"]\n'
+    "    snapshot_root_path = bronze_dataflow_spec"
+    ".sourceDetails['path']\n"
+    '    snapshot_path = f"{snapshot_root_path}'
+    '{next_version}.csv"\n'
+    "    if exist(snapshot_path):\n"
+    "        snapshot = spark.read.format("
+    "snapshot_format).options(**options)"
+    ".load(snapshot_path)\n"
+    "        return (snapshot, next_version)\n"
+    "    else:\n"
+    "        return None\n"
+    "\n"
+    "\n"
+    "# COMMAND ----------\n"
+    "\n"
+    'layer = spark.conf.get("layer", None)\n'
+    "\n"
+    "from databricks.labs.sdp_meta.dataflow_pipeline "
+    "import DataflowPipeline\n"
+    "DataflowPipeline.invoke_dlt_pipeline(\n"
+    "    spark, layer,\n"
+    "    bronze_next_snapshot_and_version="
+    "next_snapshot_and_version,\n"
+    "    silver_next_snapshot_and_version=None,\n"
+    ")\n"
+)
+
+snapshot_encoded = base64.b64encode(
+    snapshot_runner_content.encode("utf-8")
+).decode("utf-8")
+
+w.workspace.import_(
+    content=snapshot_encoded,
+    path=f"{notebook_dir}/{snapshot_notebook_name}",
+    format=ExportFormat.SOURCE,
+    language=Language.PYTHON,
+    overwrite=True,
+)
+
+snapshot_runner_path = f"{notebook_dir}/{snapshot_notebook_name}"
+print(f"Snapshot runner notebook created: {snapshot_runner_path}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 9.5 Validate Initial Snapshots
+# MAGIC ### 9.5 Create & Start Snapshot Pipeline
+# MAGIC
+# MAGIC The pipeline processes the initial snapshot (LOAD_1).
+
+# COMMAND ----------
+
+snapshot_pipeline_name = f"sdp_meta_demo_snapshot_{uc_schema_name}"
+snapshot_pipeline_id_file = (
+    f"{uc_volume_path}/snapshot_pipeline_id.txt"
+)
+
+snapshot_pipeline_config = {
+    "layer": "bronze_silver",
+    "bronze.group": "SNAP",
+    "silver.group": "SNAP",
+    "bronze.dataflowspecTable": (
+        f"{uc_catalog_name}.{uc_schema_name}.bronze_dataflowspec"
+    ),
+    "silver.dataflowspecTable": (
+        f"{uc_catalog_name}.{uc_schema_name}.silver_dataflowspec"
+    ),
+    "sdp_meta_whl": git_url_for_pip,
+}
+
+existing_snap = [
+    p for p in w.pipelines.list_pipelines()
+    if p.name == snapshot_pipeline_name
+]
+if existing_snap:
+    snapshot_pipeline_id = existing_snap[0].pipeline_id
+    print(
+        f"Reusing existing snapshot pipeline: "
+        f"{snapshot_pipeline_id}"
+    )
+else:
+    created_snap = w.pipelines.create(
+        name=snapshot_pipeline_name,
+        catalog=uc_catalog_name,
+        schema=bronze_schema,
+        libraries=[
+            PipelineLibrary(
+                notebook=NotebookLibrary(
+                    path=snapshot_runner_path
+                )
+            )
+        ],
+        configuration=snapshot_pipeline_config,
+        development=True,
+    )
+    snapshot_pipeline_id = created_snap.pipeline_id
+    print(f"Snapshot pipeline created: {snapshot_pipeline_id}")
+
+with open(snapshot_pipeline_id_file, "w") as fh:
+    fh.write(snapshot_pipeline_id)
+print(
+    f"Snapshot pipeline ID saved to: "
+    f"{snapshot_pipeline_id_file}"
+)
+
+run_pipeline_and_wait(
+    w, snapshot_pipeline_id, label="snapshot initial load"
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### 9.6 Validate Initial Snapshots
 
 # COMMAND ----------
 
@@ -2496,7 +2673,7 @@ display(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 9.6 Load Next Snapshot (Version 2)
+# MAGIC ### 9.7 Load Next Snapshot (Version 2)
 # MAGIC
 # MAGIC Simulate arrival of a new snapshot:
 # MAGIC - Products: some items renamed (e.g., `shorts` → `shorts_v2`)
@@ -2526,16 +2703,20 @@ print("Updated source_products_delta with LOAD_2 data")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 9.7 Re-run the Pipeline (Snapshot V2)
-# MAGIC
-# MAGIC Go to your pipeline and click **Start** again.
-# MAGIC
-# MAGIC > After pipeline completes, run cells below to see the changes.
+# MAGIC ### 9.8 Re-run the Snapshot Pipeline (Snapshot V2)
+
+# COMMAND ----------
+
+with open(snapshot_pipeline_id_file, "r") as fh:
+    snapshot_pipeline_id = fh.read().strip()
+run_pipeline_and_wait(
+    w, snapshot_pipeline_id, label="snapshot V2"
+)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 9.8 Validate Snapshot V2 Changes
+# MAGIC ### 9.9 Validate Snapshot V2 Changes
 
 # COMMAND ----------
 
@@ -2618,7 +2799,7 @@ iot_sink_path = (
 
 iot_sink_feed = {
     "data_flow_id": "400",
-    "data_flow_group": "A1",
+    "data_flow_group": "SINK",
     "source_system": "IoT",
     "source_format": "cloudFiles",
     "source_details": {
@@ -2658,6 +2839,9 @@ iot_sink_feed = {
     ],
 }
 
+with open(onboarding_file_path, "r") as fh:
+    onboarding_json = json.load(fh)
+
 onboarding_json.append(iot_sink_feed)
 
 with open(onboarding_file_path, "w") as fh:
@@ -2682,19 +2866,73 @@ onboarding_params["overwrite"] = "True"
 
 OnboardDataflowspec(
     spark=spark, dict_obj=onboarding_params, uc_enabled=True
-).onboard_dataflow_specs()
+).onboard_bronze_dataflow_spec()
 print("Onboarding updated with IoT events + delta sink!")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 10.3 Re-run the Pipeline
+# MAGIC ### 10.3 Create & Start Sink Pipeline
 # MAGIC
-# MAGIC Go to your Lakeflow Declarative Pipeline and click **Start**.
-# MAGIC The pipeline will now also process IoT events and write to the
-# MAGIC external delta sink.
-# MAGIC
-# MAGIC > After pipeline completes, run cells below to validate.
+# MAGIC The sink pipeline runs under the **SINK** data-flow group with
+# MAGIC its own runner notebook (no snapshot callback needed).
+
+# COMMAND ----------
+
+sink_pipeline_name = (
+    f"sdp_meta_demo_sink_{uc_schema_name}"
+)
+sink_pipeline_id_file = (
+    f"{uc_volume_path}/sink_pipeline_id.txt"
+)
+
+sink_pipeline_config = {
+    "layer": "bronze",
+    "bronze.group": "SINK",
+    "bronze.dataflowspecTable": (
+        f"{uc_catalog_name}.{uc_schema_name}"
+        ".bronze_dataflowspec"
+    ),
+    "sdp_meta_whl": git_url_for_pip,
+}
+
+existing_sink = [
+    p for p in w.pipelines.list_pipelines()
+    if p.name == sink_pipeline_name
+]
+if existing_sink:
+    sink_pipeline_id = existing_sink[0].pipeline_id
+    print(
+        f"Reusing existing sink pipeline: "
+        f"{sink_pipeline_id}"
+    )
+else:
+    created_sink = w.pipelines.create(
+        name=sink_pipeline_name,
+        catalog=uc_catalog_name,
+        schema=bronze_schema,
+        libraries=[
+            PipelineLibrary(
+                notebook=NotebookLibrary(
+                    path=runner_notebook_path
+                )
+            )
+        ],
+        configuration=sink_pipeline_config,
+        development=True,
+    )
+    sink_pipeline_id = created_sink.pipeline_id
+    print(f"Sink pipeline created: {sink_pipeline_id}")
+
+with open(sink_pipeline_id_file, "w") as fh:
+    fh.write(sink_pipeline_id)
+print(
+    f"Sink pipeline ID saved to: {sink_pipeline_id_file}"
+)
+
+run_pipeline_and_wait(
+    w, sink_pipeline_id, label="IoT sink"
+)
 
 # COMMAND ----------
 
@@ -2728,8 +2966,6 @@ display(
 # COMMAND ----------
 
 # DBTITLE 1,Complete Pipeline Data Flow Summary
-from pyspark.sql import Row
-
 all_tables_final = [
     ("customers", "cloudFiles + CDC", bronze_schema,
      silver_schema),
@@ -2836,9 +3072,32 @@ display(spark.createDataFrame(summary_rows))
 
 # COMMAND ----------
 
-# dbutils.fs.rm(uc_volume_path, recurse=True)
+# -- Delete pipelines --
+# for pid_file in [
+#     pipeline_id_file,
+#     snapshot_pipeline_id_file,
+#     sink_pipeline_id_file,
+# ]:
+#     try:
+#         with open(pid_file, "r") as fh:
+#             pid = fh.read().strip()
+#         w.pipelines.delete(pipeline_id=pid)
+#         print(f"Deleted pipeline: {pid}")
+#     except Exception as e:
+#         print(f"Skipping {pid_file}: {e}")
+#
+# -- Delete runner notebooks --
+# for nb_path in [runner_notebook_path, snapshot_runner_path]:
+#     try:
+#         w.workspace.delete(nb_path)
+#         print(f"Deleted notebook: {nb_path}")
+#     except Exception as e:
+#         print(f"Skipping {nb_path}: {e}")
+#
+# -- Drop schemas and catalog --
 # spark.sql(f"DROP SCHEMA IF EXISTS {uc_catalog_name}.{bronze_schema} CASCADE")
 # spark.sql(f"DROP SCHEMA IF EXISTS {uc_catalog_name}.{silver_schema} CASCADE")
+# spark.sql(f"DROP SCHEMA IF EXISTS {uc_catalog_name}.{pipeline_target_schema} CASCADE")
 # spark.sql(f"DROP SCHEMA IF EXISTS {uc_catalog_name}.{uc_schema_name} CASCADE")
 # spark.sql(f"DROP CATALOG IF EXISTS {uc_catalog_name} CASCADE")
-# print(f"Cleaned up: {uc_catalog_name}")
+# print(f"Cleaned up all demo resources for: {uc_catalog_name}")
