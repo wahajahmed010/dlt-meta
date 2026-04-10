@@ -571,7 +571,8 @@ class OnboardDataflowspec:
                 "eventhub",
                 "kafka",
                 "delta",
-                "snapshot"
+                "snapshot",
+                "sqlserver"
             ]:
                 raise Exception(
                     f"Source format {source_format} not supported in SDP-META! row={onboarding_row}"

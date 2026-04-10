@@ -422,8 +422,7 @@ class SDPMeta:
                                                         )
                                                     )
                                                 ],
-                                                schema=cmd.dlt_target_schema,  # for DPM
-                                                # target=cmd.dlt_target_schema,
+                                                target=cmd.dlt_target_schema,
                                                 clusters=[pipelines.PipelineCluster(label="default",
                                                                                     num_workers=cmd.num_workers)]
                                                 if not cmd.serverless else None,
