@@ -663,7 +663,7 @@ class DataflowPipelineTests(SDPFrameworkTestCase):
         target_path_uc, target_table_uc, target_table_name_uc = pipeline_uc._get_target_table_info()
         expected_comment_uc = pipeline_uc._get_table_comment(target_table_uc, is_bronze=False)
         self.assertEqual(args[0], pipeline_uc.write_to_delta)
-        self.assertEqual(kwargs["name"], target_table_name_uc)
+        self.assertEqual(kwargs["name"], target_table_uc)
         self.assertIsNone(target_path_uc)
         self.assertIsNone(kwargs["path"])
         self.assertEqual(kwargs["comment"], expected_comment_uc)
@@ -684,7 +684,7 @@ class DataflowPipelineTests(SDPFrameworkTestCase):
         mock_dlt_table.assert_called_once()
         args, kwargs = mock_dlt_table.call_args
         self.assertEqual(args[0], pipeline_no_uc.write_to_delta)
-        self.assertEqual(kwargs["name"], target_table_name_no_uc)
+        self.assertEqual(kwargs["name"], target_table_no_uc)
         self.assertEqual(kwargs["path"], target_path_no_uc)
         self.assertEqual(kwargs["comment"], expected_comment_no_uc)
 
@@ -814,7 +814,7 @@ class DataflowPipelineTests(SDPFrameworkTestCase):
         _, kwargs = mock_dlt_table.call_args_list[0]
         target_path_actual, target_table, target_table_name = pipeline._get_target_table_info()
         expected_comment = pipeline._get_table_comment(target_table, is_bronze=True)
-        self.assertEqual(kwargs["name"], target_table_name)
+        self.assertEqual(kwargs["name"], target_table)
         expected_table_properties = (
             dict(bronze_dataflow_spec.tableProperties)
             if bronze_dataflow_spec.tableProperties
@@ -833,6 +833,16 @@ class DataflowPipelineTests(SDPFrameworkTestCase):
         mock_expect_all_or_fail.assert_called_once_with(expect_or_fail_dict)
         mock_expect_all.assert_called_once_with(expect_dict)
         assert mock_expect_all_or_drop.expect_all_or_drop(expect_or_quarantine_dict)
+        # Verify quarantine table uses fully-qualified name (issue #243)
+        if expect_or_quarantine_dict:
+            _, quarantine_kwargs = mock_dlt_table.call_args_list[-1]
+            quarantine_target_details = pipeline._get_quarantine_target_details()
+            q_cl = quarantine_target_details.get('catalog', None)
+            q_cl_name = f"{q_cl}." if q_cl is not None else ''
+            q_db = quarantine_target_details.get('database', '')
+            q_table_name = quarantine_target_details.get('table', '')
+            expected_quarantine_table = f"{q_cl_name}{q_db}.{q_table_name}"
+            self.assertEqual(quarantine_kwargs["name"], expected_quarantine_table)
 
     @patch.object(DataflowPipeline, 'get_silver_schema', new_callable=MagicMock)
     @patch('databricks.labs.sdp_meta.dataflow_pipeline.dlt')
