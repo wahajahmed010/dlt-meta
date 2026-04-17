@@ -150,6 +150,8 @@ deployment-merged.yaml
 #IDE
 .idea/
 .vscode/
+.cursor/
+.claude/
 .databricks
 .databricks-login.json
 demo/conf/onboarding.json

@@ -489,7 +489,7 @@ class DataflowPipeline:
                 dlt_table_with_expectation = dlt.expect_all(expect_all_dict)(
                     dlt.table(
                         self.write_to_delta,
-                        name=f"{target_table_name}",
+                        name=f"{target_table}",
                         table_properties=self.dataflowSpec.tableProperties,
                         partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
                         cluster_by=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.clusterBy),
@@ -503,7 +503,7 @@ class DataflowPipeline:
                     dlt_table_with_expectation = dlt.expect_all_or_fail(expect_all_or_fail_dict)(
                         dlt.table(
                             self.write_to_delta,
-                            name=f"{target_table_name}",
+                            name=f"{target_table}",
                             table_properties=self.dataflowSpec.tableProperties,
                             partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
                             cluster_by=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.clusterBy),
@@ -520,7 +520,7 @@ class DataflowPipeline:
                     dlt_table_with_expectation = dlt.expect_all_or_drop(expect_all_or_drop_dict)(
                         dlt.table(
                             self.write_to_delta,
-                            name=f"{target_table_name}",
+                            name=f"{target_table}",
                             table_properties=self.dataflowSpec.tableProperties,
                             partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
                             cluster_by=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.clusterBy),
@@ -588,7 +588,7 @@ class DataflowPipeline:
             dlt.expect_all_or_drop(expect_or_quarantine_dict)(
                 dlt.table(
                     self.write_to_delta,
-                    name=f"{quarantine_table_name}",
+                    name=f"{quarantine_table}",
                     table_properties=self.dataflowSpec.quarantineTableProperties,
                     partition_cols=q_partition_cols,
                     cluster_by=q_cluster_by,
