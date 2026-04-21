@@ -487,7 +487,7 @@ class SDPMeta:
             onboard_cmd_dict["dbr_version"] = self._wsi._question(
                 "Provide databricks runtime version", default=self._ws.clusters.select_spark_version(latest=True))
         onboard_cmd_dict["onboarding_file_path"] = self._wsi._question(
-            "Provide onboarding file path", default='demo/conf/onboarding.template')
+            "Provide onboarding file path", default='demo/conf/json/onboarding.template')
         cwd = os.getcwd()
         onboarding_files_dir_path = self._wsi._question(
             "Provide onboarding files local directory", default=f'{cwd}/demo/')
@@ -645,7 +645,7 @@ class SDPMeta:
 
         # Get file paths
         onboard_cmd_dict["onboarding_file_path"] = form_data.get(
-            'onboarding_file_path', 'demo/conf/onboarding.template'
+            'onboarding_file_path', 'demo/conf/json/onboarding.template'
         )
         onboarding_files_dir_path = form_data.get('local_directory', f'{os.getcwd()}/demo/')
         onboard_cmd_dict["onboarding_files_dir_path"] = f"file:/{onboarding_files_dir_path}"

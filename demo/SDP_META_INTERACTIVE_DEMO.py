@@ -29,12 +29,12 @@
 # MAGIC | Resource | Link |
 # MAGIC |----------|------|
 # MAGIC | **Source Code** | [sdp_meta](https://github.com/databrickslabs/dlt-meta/tree/main/src/databricks/labs/sdp_meta) |
-# MAGIC | **Onboarding Template** | [onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/onboarding.template) |
-# MAGIC | **Append Flow Template** | [cloudfiles-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/cloudfiles-onboarding.template) |
-# MAGIC | **Snapshot Template** | [snapshot-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/snapshot-onboarding.template) |
-# MAGIC | **Sink Template** | [kafka-sink-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/kafka-sink-onboarding.template) |
-# MAGIC | **Silver Transformations** | [silver_transformations.json](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/silver_transformations.json) |
-# MAGIC | **Data Quality (DQE)** | [demo/conf/dqe/](https://github.com/databrickslabs/dlt-meta/tree/main/demo/conf/dqe) |
+# MAGIC | **Onboarding Template (JSON / YAML)** | [json/onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/onboarding.template) / [yml/onboarding.template.yml](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/yml/onboarding.template.yml) |
+# MAGIC | **Append Flow Template (JSON / YAML)** | [json/cloudfiles-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/cloudfiles-onboarding.template) / [yml/cloudfiles-onboarding.template.yml](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/yml/cloudfiles-onboarding.template.yml) |
+# MAGIC | **Snapshot Template (JSON / YAML)** | [json/snapshot-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/snapshot-onboarding.template) / [yml/snapshot-onboarding.template.yml](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/yml/snapshot-onboarding.template.yml) |
+# MAGIC | **Sink Template (JSON / YAML)** | [json/kafka-sink-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/kafka-sink-onboarding.template) / [yml/kafka-sink-onboarding.template.yml](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/yml/kafka-sink-onboarding.template.yml) |
+# MAGIC | **Silver Transformations (JSON / YAML)** | [json/silver_transformations.json](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/silver_transformations.json) / [yml/silver_transformations.yml](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/yml/silver_transformations.yml) |
+# MAGIC | **Data Quality (DQE)** | [json/dqe/](https://github.com/databrickslabs/dlt-meta/tree/main/demo/conf/json/dqe) / [yml/dqe/](https://github.com/databrickslabs/dlt-meta/tree/main/demo/conf/yml/dqe) |
 # MAGIC | **Documentation** | [databrickslabs.github.io/dlt-meta](https://databrickslabs.github.io/dlt-meta/) |
 
 # COMMAND ----------
@@ -76,6 +76,12 @@ dbutils.widgets.dropdown(
     choices=["dbdatagen", "github"],
     label="Data Source"
 )
+dbutils.widgets.dropdown(
+    name="onboarding_format",
+    defaultValue="json",
+    choices=["json", "yml"],
+    label="Onboarding File Format"
+)
 
 # COMMAND ----------
 
@@ -83,11 +89,13 @@ git_branch = dbutils.widgets.get("git_branch")
 uc_catalog_name = dbutils.widgets.get("uc_catalog_name")
 uc_schema_name = dbutils.widgets.get("uc_schema_name")
 data_source = dbutils.widgets.get("data_source")
+onboarding_format = dbutils.widgets.get("onboarding_format")
 
-print(f"Git Branch   : {git_branch}")
-print(f"UC Catalog   : {uc_catalog_name}")
-print(f"UC Schema    : {uc_schema_name}")
-print(f"Data Source  : {data_source}")
+print(f"Git Branch         : {git_branch}")
+print(f"UC Catalog         : {uc_catalog_name}")
+print(f"UC Schema          : {uc_schema_name}")
+print(f"Data Source        : {data_source}")
+print(f"Onboarding Format  : {onboarding_format}")
 
 # COMMAND ----------
 
@@ -129,7 +137,7 @@ dbutils.library.restartPython()
 # MAGIC | **10** | **DLT Sink** — write to external delta table |
 # MAGIC
 # MAGIC ### Features Demonstrated
-# MAGIC - Metadata-driven onboarding (JSON → DataflowSpec tables)
+# MAGIC - Metadata-driven onboarding (JSON or YAML → DataflowSpec tables, controlled by the `Onboarding File Format` widget)
 # MAGIC - CloudFiles (Autoloader) ingestion
 # MAGIC - CDC with `apply_changes` (SCD Type 2)
 # MAGIC - Data quality (`expect_or_drop`, `expect_or_quarantine`)
@@ -158,6 +166,7 @@ dbutils.library.restartPython()
 
 import csv
 import json
+import yaml
 import os
 import time
 
@@ -176,6 +185,7 @@ git_branch = dbutils.widgets.get("git_branch")
 uc_catalog_name = dbutils.widgets.get("uc_catalog_name")
 uc_schema_name = dbutils.widgets.get("uc_schema_name")
 data_source = dbutils.widgets.get("data_source")
+onboarding_format = dbutils.widgets.get("onboarding_format")
 
 w = WorkspaceClient()
 
@@ -204,6 +214,37 @@ def run_pipeline_and_wait(w, pipeline_id, label=""):
             f"Check the pipeline UI for details: {pipeline_url}"
         )
     print("Pipeline completed successfully.")
+
+
+def _write_onboarding(data, path):
+    with open(path, "w") as fh:
+        if path.endswith(".yml") or path.endswith(".yaml"):
+            yaml.dump(data, fh, default_flow_style=False, allow_unicode=True)
+        else:
+            json.dump(data, fh, indent=2)
+
+
+def _read_onboarding(path):
+    with open(path, "r") as fh:
+        if path.endswith(".yml") or path.endswith(".yaml"):
+            return yaml.safe_load(fh)
+        else:
+            return json.load(fh)
+
+
+# Extension used for every silver-transformation and DQE config file. Driven
+# by the `onboarding_format` widget so the entire demo (onboarding spec +
+# referenced silver/DQ files) stays in one consistent format.
+conf_ext = "yml" if onboarding_format in ("yml", "yaml") else "json"
+
+
+def _write_conf(data, path):
+    """Serialize a config dict/list as YAML or JSON based on the path suffix."""
+    with open(path, "w") as fh:
+        if path.endswith((".yml", ".yaml")):
+            yaml.dump(data, fh, default_flow_style=False, allow_unicode=True)
+        else:
+            json.dump(data, fh, indent=4)
 
 # COMMAND ----------
 
@@ -256,7 +297,7 @@ incremental_data_path = f"{resources_path}/incremental_data"
 conf_path = f"{demo_path}/conf"
 dqe_path = f"{conf_path}/dqe"
 transformation_path = conf_path
-onboarding_file_path = f"{uc_volume_path}/onboarding.json"
+onboarding_file_path = f"{uc_volume_path}/onboarding.{onboarding_format}"
 af_data_path = f"{data_path}/append_flow"
 snapshot_data_path = f"{data_path}/snapshots"
 sink_path = f"{uc_volume_path}/data/sink"
@@ -289,10 +330,10 @@ print(f"Onboarding file   : {onboarding_file_path}")
 # MAGIC > See: [demo/resources/ddl/](https://github.com/databrickslabs/dlt-meta/tree/main/demo/resources/ddl)
 # MAGIC
 # MAGIC > **Data Quality**: `expect_or_drop` and `expect_or_quarantine`.
-# MAGIC > See: [demo/conf/dqe/](https://github.com/databrickslabs/dlt-meta/tree/main/demo/conf/dqe)
+# MAGIC > See: [json/dqe/](https://github.com/databrickslabs/dlt-meta/tree/main/demo/conf/json/dqe) or [yml/dqe/](https://github.com/databrickslabs/dlt-meta/tree/main/demo/conf/yml/dqe)
 # MAGIC
 # MAGIC > **Silver Transformations**: column selection and expressions.
-# MAGIC > See: [silver_transformations.json](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/silver_transformations.json)
+# MAGIC > See: [json/silver_transformations.json](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/silver_transformations.json) or [yml/silver_transformations.yml](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/yml/silver_transformations.yml)
 
 # COMMAND ----------
 
@@ -334,8 +375,10 @@ for filename, content in ddl_files.items():
 
 # COMMAND ----------
 
+# DQE configs keyed by base filename (no extension). The actual file
+# extension (.json or .yml) is appended at write time based on conf_ext.
 bronze_dqe = {
-    "customers.json": {
+    "customers": {
         "expect_or_drop": {
             "no_rescued_data": "_rescued_data IS NULL",
             "valid_customer_id": "customer_id IS NOT NULL",
@@ -346,7 +389,7 @@ bronze_dqe = {
             ),
         },
     },
-    "transactions.json": {
+    "transactions": {
         "expect_or_drop": {
             "no_rescued_data": "_rescued_data IS NULL",
             "valid_transaction_id": "transaction_id IS NOT NULL",
@@ -360,7 +403,7 @@ bronze_dqe = {
             ),
         },
     },
-    "products.json": {
+    "products": {
         "expect_or_drop": {
             "no_rescued_data": "_rescued_data IS NULL",
             "valid_product_id": "product_id IS NOT NULL",
@@ -371,7 +414,7 @@ bronze_dqe = {
             ),
         },
     },
-    "stores.json": {
+    "stores": {
         "expect_or_drop": {
             "no_rescued_data": "_rescued_data IS NULL",
             "valid_store_id": "store_id IS NOT NULL",
@@ -382,7 +425,7 @@ bronze_dqe = {
             ),
         },
     },
-    "af_orders_bronze_dqe.json": {
+    "af_orders_bronze_dqe": {
         "expect_or_drop": {
             "no_rescued_data": "_rescued_data IS NULL",
             "valid_order_id": "order_id IS NOT NULL",
@@ -393,7 +436,7 @@ bronze_dqe = {
             ),
         },
     },
-    "iot_events_bronze_dqe.json": {
+    "iot_events_bronze_dqe": {
         "expect_or_drop": {
             "valid_device_id": "device_id IS NOT NULL",
         },
@@ -404,28 +447,28 @@ bronze_dqe = {
 }
 
 silver_dqe = {
-    "customers_silver_dqe.json": {
+    "customers_silver_dqe": {
         "expect_or_drop": {
             "valid_customer_id": "customer_id IS NOT NULL",
         },
     },
-    "transactions_silver_dqe.json": {
+    "transactions_silver_dqe": {
         "expect_or_drop": {
             "valid_transaction_id": "transaction_id IS NOT NULL",
             "valid_customer_id": "customer_id IS NOT NULL",
         },
     },
-    "products_silver_dqe.json": {
+    "products_silver_dqe": {
         "expect_or_drop": {
             "valid_product_id": "product_id IS NOT NULL",
         },
     },
-    "stores_silver_dqe.json": {
+    "stores_silver_dqe": {
         "expect_or_drop": {
             "valid_store_id": "store_id IS NOT NULL",
         },
     },
-    "af_orders_silver_dqe.json": {
+    "af_orders_silver_dqe": {
         "expect_or_drop": {
             "valid_order_id": "order_id IS NOT NULL",
         },
@@ -433,10 +476,10 @@ silver_dqe = {
 }
 
 for dqe_set in [bronze_dqe, silver_dqe]:
-    for filename, content in dqe_set.items():
-        with open(f"{dqe_path}/{filename}", "w") as fh:
-            json.dump(content, fh, indent=4)
-        print(f"  Created: {dqe_path}/{filename}")
+    for basename, content in dqe_set.items():
+        out_path = f"{dqe_path}/{basename}.{conf_ext}"
+        _write_conf(content, out_path)
+        print(f"  Created: {out_path}")
 
 # COMMAND ----------
 
@@ -474,9 +517,8 @@ silver_transformations = [
     },
 ]
 
-st_path = f"{transformation_path}/silver_transformations.json"
-with open(st_path, "w") as fh:
-    json.dump(silver_transformations, fh, indent=2)
+st_path = f"{transformation_path}/silver_transformations.{conf_ext}"
+_write_conf(silver_transformations, st_path)
 print(f"  Created: {st_path}")
 
 af_silver_transformations = [
@@ -492,10 +534,9 @@ af_silver_transformations = [
 ]
 
 af_st_path = (
-    f"{transformation_path}/af_silver_transformations.json"
+    f"{transformation_path}/af_silver_transformations.{conf_ext}"
 )
-with open(af_st_path, "w") as fh:
-    json.dump(af_silver_transformations, fh, indent=2)
+_write_conf(af_silver_transformations, af_st_path)
 print(f"  Created: {af_st_path}")
 
 snapshot_silver_transformations = [
@@ -515,10 +556,9 @@ snapshot_silver_transformations = [
 ]
 
 snap_st_path = (
-    f"{transformation_path}/snapshot_silver_transformations.json"
+    f"{transformation_path}/snapshot_silver_transformations.{conf_ext}"
 )
-with open(snap_st_path, "w") as fh:
-    json.dump(snapshot_silver_transformations, fh, indent=2)
+_write_conf(snapshot_silver_transformations, snap_st_path)
 print(f"  Created: {snap_st_path}")
 
 # COMMAND ----------
@@ -889,7 +929,7 @@ print("Quarantine tables will capture these records.")
 # MAGIC Append Flow reads from **multiple source paths** and writes to the
 # MAGIC **same target table** using `dlt.append_flow`.
 # MAGIC We create two separate source directories for orders.
-# MAGIC See: [cloudfiles-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/cloudfiles-onboarding.template)
+# MAGIC See: [cloudfiles-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/cloudfiles-onboarding.template)
 
 # COMMAND ----------
 
@@ -951,7 +991,7 @@ print(f"  Created: {af_path} ({len(orders_af_data)} records)")
 # MAGIC
 # MAGIC Snapshot-based ingestion uses `apply_changes_from_snapshot` instead
 # MAGIC of streaming. Each snapshot represents a full point-in-time view.
-# MAGIC See: [snapshot-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/snapshot-onboarding.template)
+# MAGIC See: [snapshot-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/snapshot-onboarding.template)
 
 # COMMAND ----------
 
@@ -1115,7 +1155,7 @@ print(f"\n=== Config ===\n  {os.listdir(conf_path)}")
 # MAGIC tables that drive the pipeline.
 # MAGIC
 # MAGIC ### Key Concepts
-# MAGIC - **[Onboarding File](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/onboarding.template)**:
+# MAGIC - **[Onboarding File](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/onboarding.template)**:
 # MAGIC   JSON defining source/target for each data feed
 # MAGIC - **[OnboardDataflowspec API](https://github.com/databrickslabs/dlt-meta/blob/main/src/databricks/labs/sdp_meta/onboard_dataflowspec.py)**:
 # MAGIC   Reads the file and writes Bronze/Silver DataflowSpec tables
@@ -1126,129 +1166,94 @@ print(f"\n=== Config ===\n  {os.listdir(conf_path)}")
 # MAGIC %md
 # MAGIC ### 2.1 Create Onboarding File
 # MAGIC
-# MAGIC We start with **Customers** and **Transactions**. Each entry
+# MAGIC The spec for **Customers** and **Transactions** lives in the repo as a
+# MAGIC committed sample, in **whichever format you picked in the widget**:
+# MAGIC
+# MAGIC - `json` → [`demo/conf/json/sample_onboarding.json`](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/sample_onboarding.json)
+# MAGIC - `yml`  → [`demo/conf/yml/sample_onboarding.yml`](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/yml/sample_onboarding.yml)
+# MAGIC
+# MAGIC The cell below loads that file, substitutes runtime tokens
+# MAGIC (`$data_path`, `$dqe_path`, `$uc_catalog_name`, …), prints the
+# MAGIC rendered text so you actually see the chosen format, and writes
+# MAGIC it to the UC volume as `onboarding.{json|yml}`. Each entry
 # MAGIC defines:
 # MAGIC - Source details (path, schema, format)
 # MAGIC - Bronze target (table, data quality, quarantine)
 # MAGIC - Silver target (CDC config, transformations)
 # MAGIC
+# MAGIC > **Note on field names:** keys like
+# MAGIC > `bronze_data_quality_expectations_json_prod` and
+# MAGIC > `silver_transformation_json_prod` are the runner's spec schema
+# MAGIC > (see `OnboardDataflowspec`); the `_json_` suffix is part of
+# MAGIC > the field name and does **not** mean the value must be JSON —
+# MAGIC > the value may point to a `.json` or a `.yml` file.
+# MAGIC >
 # MAGIC > **CDC (SCD Type 2)**: Silver uses `apply_changes` for
 # MAGIC > history tracking.
 # MAGIC > See: [dataflow_pipeline.py](https://github.com/databrickslabs/dlt-meta/blob/main/src/databricks/labs/sdp_meta/dataflow_pipeline.py)
 
 # COMMAND ----------
 
-onboarding_json = [
-    {
-        "data_flow_id": "100",
-        "data_flow_group": "A1",
-        "source_system": "mysql",
-        "source_format": "cloudFiles",
-        "source_details": {
-            "source_path_prod": f"{data_path}/customers",
-            "source_schema_path": (
-                f"{ddl_path}/customers.ddl"
-            ),
-        },
-        "bronze_catalog_prod": uc_catalog_name,
-        "bronze_database_prod": bronze_schema,
-        "bronze_table": "customers",
-        "bronze_table_comment": "customers bronze table",
-        "bronze_reader_options": {
-            "cloudFiles.format": "csv",
-            "cloudFiles.rescuedDataColumn": "_rescued_data",
-            "header": "true",
-        },
-        "bronze_cluster_by_auto": True,
-        "bronze_data_quality_expectations_json_prod": (
-            f"{dqe_path}/customers.json"
-        ),
-        "bronze_catalog_quarantine_prod": uc_catalog_name,
-        "bronze_database_quarantine_prod": bronze_schema,
-        "bronze_quarantine_table": "customers_quarantine",
-        "bronze_quarantine_table_comment": (
-            "customers quarantine table"
-        ),
-        "silver_catalog_prod": uc_catalog_name,
-        "silver_database_prod": silver_schema,
-        "silver_table": "customers",
-        "silver_table_comment": "customers silver table",
-        "silver_cdc_apply_changes": {
-            "keys": ["customer_id"],
-            "sequence_by": "dmsTimestamp",
-            "scd_type": "2",
-            "apply_as_deletes": "Op = 'D'",
-            "except_column_list": [
-                "Op", "dmsTimestamp", "_rescued_data",
-            ],
-        },
-        "silver_cluster_by_auto": True,
-        "silver_transformation_json_prod": (
-            f"{transformation_path}/silver_transformations.json"
-        ),
-        "silver_data_quality_expectations_json_prod": (
-            f"{dqe_path}/customers_silver_dqe.json"
-        ),
-    },
-    {
-        "data_flow_id": "101",
-        "data_flow_group": "A1",
-        "source_system": "mysql",
-        "source_format": "cloudFiles",
-        "source_details": {
-            "source_path_prod": (
-                f"{data_path}/transactions"
-            ),
-            "source_schema_path": (
-                f"{ddl_path}/transactions.ddl"
-            ),
-        },
-        "bronze_catalog_prod": uc_catalog_name,
-        "bronze_database_prod": bronze_schema,
-        "bronze_table": "transactions",
-        "bronze_table_comment": "transactions bronze table",
-        "bronze_reader_options": {
-            "cloudFiles.format": "csv",
-            "cloudFiles.rescuedDataColumn": "_rescued_data",
-            "header": "true",
-        },
-        "bronze_cluster_by_auto": True,
-        "bronze_data_quality_expectations_json_prod": (
-            f"{dqe_path}/transactions.json"
-        ),
-        "bronze_catalog_quarantine_prod": uc_catalog_name,
-        "bronze_database_quarantine_prod": bronze_schema,
-        "bronze_quarantine_table": (
-            "transactions_quarantine"
-        ),
-        "bronze_quarantine_table_comment": (
-            "transactions bronze quarantine table"
-        ),
-        "silver_catalog_prod": uc_catalog_name,
-        "silver_database_prod": silver_schema,
-        "silver_table": "transactions",
-        "silver_table_comment": "transactions silver table",
-        "silver_cdc_apply_changes": {
-            "keys": ["transaction_id"],
-            "sequence_by": "dmsTimestamp",
-            "scd_type": "2",
-            "apply_as_deletes": "Op = 'D'",
-            "except_column_list": [
-                "Op", "dmsTimestamp", "_rescued_data",
-            ],
-        },
-        "silver_cluster_by_auto": True,
-        "silver_transformation_json_prod": (
-            f"{transformation_path}/silver_transformations.json"
-        ),
-        "silver_data_quality_expectations_json_prod": (
-            f"{dqe_path}/transactions_silver_dqe.json"
-        ),
-    },
-]
+from string import Template
 
-with open(onboarding_file_path, "w") as fh:
-    json.dump(onboarding_json, fh, indent=2)
+
+def _resolve_repo_root_workspace_path():
+    """Best-effort: locate the dlt-meta repo root in the workspace.
+
+    When the notebook lives at e.g.
+      /Users/<me>/dlt-meta/demo/SDP_META_INTERACTIVE_DEMO
+    we strip back to the parent of `/demo/` and prefix `/Workspace` so
+    the sample file is readable as a POSIX path on DBR >= 13.3.
+    """
+    ctx = (
+        dbutils.notebook.entry_point.getDbutils()
+        .notebook()
+        .getContext()
+    )
+    nb_path = ctx.notebookPath().get()
+    if "/demo/" not in nb_path:
+        raise RuntimeError(
+            "Cannot locate the dlt-meta repo root from this notebook's "
+            f"path ({nb_path}). The notebook must be imported under "
+            "the dlt-meta repo (so `…/demo/SDP_META_INTERACTIVE_DEMO` "
+            "resolves) for sample loading to work."
+        )
+    repo_root_ws = nb_path.rsplit("/demo/", 1)[0]
+    if not repo_root_ws.startswith("/Workspace"):
+        repo_root_ws = "/Workspace" + repo_root_ws
+    return repo_root_ws
+
+
+_repo_root_ws = _resolve_repo_root_workspace_path()
+sample_onboarding_path = (
+    f"{_repo_root_ws}/demo/conf/{onboarding_format}"
+    f"/sample_onboarding.{conf_ext}"
+)
+
+with open(sample_onboarding_path, "r") as fh:
+    sample_text = fh.read()
+
+rendered_text = Template(sample_text).safe_substitute(
+    data_path=data_path,
+    ddl_path=ddl_path,
+    dqe_path=dqe_path,
+    transformation_path=transformation_path,
+    uc_catalog_name=uc_catalog_name,
+    bronze_schema=bronze_schema,
+    silver_schema=silver_schema,
+)
+
+print(
+    f"--- {sample_onboarding_path} (rendered as {onboarding_format}) ---\n"
+)
+print(rendered_text)
+
+if conf_ext in ("yml", "yaml"):
+    onboarding_json = yaml.safe_load(rendered_text)
+else:
+    onboarding_json = json.loads(rendered_text)
+
+_write_onboarding(onboarding_json, onboarding_file_path)
 
 print(f"Onboarding file: {onboarding_file_path}")
 print(f"Data flows: {len(onboarding_json)} (customers, transactions)")
@@ -1256,13 +1261,19 @@ print(f"Data flows: {len(onboarding_json)} (customers, transactions)")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 2.2 Inspect the Onboarding File
+# MAGIC ### 2.2 Verify the Onboarding File on the UC Volume
+# MAGIC
+# MAGIC Cell 2.1 printed the *rendered template*. This cell prints the
+# MAGIC bytes that actually landed on the UC volume after
+# MAGIC `_write_onboarding(...)` serialized them — confirming round-trip
+# MAGIC fidelity in the format you selected. This is the exact file the
+# MAGIC `OnboardDataflowspec` runner will read in the next cell.
 
 # COMMAND ----------
 
+print(f"--- {onboarding_file_path} ({onboarding_format}) ---\n")
 with open(onboarding_file_path, "r") as fh:
-    content = json.load(fh)
-print(json.dumps(content, indent=2))
+    print(fh.read())
 
 # COMMAND ----------
 
@@ -1271,7 +1282,7 @@ print(json.dumps(content, indent=2))
 # MAGIC
 # MAGIC The
 # MAGIC [OnboardDataflowspec](https://github.com/databrickslabs/dlt-meta/blob/main/src/databricks/labs/sdp_meta/onboard_dataflowspec.py)
-# MAGIC API reads the onboarding JSON and creates two Delta tables:
+# MAGIC API reads the onboarding file (JSON or YAML) and creates two Delta tables:
 # MAGIC - `bronze_dataflowspec` — metadata for Bronze layer
 # MAGIC - `silver_dataflowspec` — metadata for Silver layer
 
@@ -1562,7 +1573,7 @@ display(
 # MAGIC
 # MAGIC Records with NULL primary keys or malformed data are routed
 # MAGIC here by `expect_or_quarantine` rules.
-# MAGIC See: [DQE config](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/dqe/customers.json)
+# MAGIC See: [DQE config](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/dqe/customers.json)
 
 # COMMAND ----------
 
@@ -1654,7 +1665,7 @@ products_feed = {
     },
     "bronze_cluster_by_auto": True,
     "bronze_data_quality_expectations_json_prod": (
-        f"{dqe_path}/products.json"
+        f"{dqe_path}/products.{conf_ext}"
     ),
     "bronze_catalog_quarantine_prod": uc_catalog_name,
     "bronze_database_quarantine_prod": bronze_schema,
@@ -1677,10 +1688,10 @@ products_feed = {
     },
     "silver_cluster_by_auto": True,
     "silver_transformation_json_prod": (
-        f"{transformation_path}/silver_transformations.json"
+        f"{transformation_path}/silver_transformations.{conf_ext}"
     ),
     "silver_data_quality_expectations_json_prod": (
-        f"{dqe_path}/products_silver_dqe.json"
+        f"{dqe_path}/products_silver_dqe.{conf_ext}"
     ),
 }
 
@@ -1703,7 +1714,7 @@ stores_feed = {
         "header": "true",
     },
     "bronze_data_quality_expectations_json_prod": (
-        f"{dqe_path}/stores.json"
+        f"{dqe_path}/stores.{conf_ext}"
     ),
     "bronze_catalog_quarantine_prod": uc_catalog_name,
     "bronze_database_quarantine_prod": bronze_schema,
@@ -1725,20 +1736,18 @@ stores_feed = {
         ],
     },
     "silver_transformation_json_prod": (
-        f"{transformation_path}/silver_transformations.json"
+        f"{transformation_path}/silver_transformations.{conf_ext}"
     ),
     "silver_data_quality_expectations_json_prod": (
-        f"{dqe_path}/stores_silver_dqe.json"
+        f"{dqe_path}/stores_silver_dqe.{conf_ext}"
     ),
 }
 
-with open(onboarding_file_path, "r") as fh:
-    onboarding_json = json.load(fh)
+onboarding_json = _read_onboarding(onboarding_file_path)
 
 onboarding_json.extend([products_feed, stores_feed])
 
-with open(onboarding_file_path, "w") as fh:
-    json.dump(onboarding_json, fh, indent=2)
+_write_onboarding(onboarding_json, onboarding_file_path)
 
 print(
     f"Onboarding file updated: "
@@ -2136,7 +2145,7 @@ display(spark.sql(f"""
 # MAGIC   │                   silver_orders
 # MAGIC ```
 # MAGIC
-# MAGIC See: [cloudfiles-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/cloudfiles-onboarding.template)
+# MAGIC See: [cloudfiles-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/cloudfiles-onboarding.template)
 
 # COMMAND ----------
 
@@ -2178,7 +2187,7 @@ append_flow_feed = {
     },
     "bronze_cluster_by_auto": True,
     "bronze_data_quality_expectations_json_prod": (
-        f"{dqe_path}/af_orders_bronze_dqe.json"
+        f"{dqe_path}/af_orders_bronze_dqe.{conf_ext}"
     ),
     "bronze_catalog_quarantine_prod": uc_catalog_name,
     "bronze_database_quarantine_prod": bronze_schema,
@@ -2218,20 +2227,18 @@ append_flow_feed = {
         ],
     },
     "silver_transformation_json_prod": (
-        f"{transformation_path}/af_silver_transformations.json"
+        f"{transformation_path}/af_silver_transformations.{conf_ext}"
     ),
     "silver_data_quality_expectations_json_prod": (
-        f"{dqe_path}/af_orders_silver_dqe.json"
+        f"{dqe_path}/af_orders_silver_dqe.{conf_ext}"
     ),
 }
 
-with open(onboarding_file_path, "r") as fh:
-    onboarding_json = json.load(fh)
+onboarding_json = _read_onboarding(onboarding_file_path)
 
 onboarding_json.append(append_flow_feed)
 
-with open(onboarding_file_path, "w") as fh:
-    json.dump(onboarding_json, fh, indent=2)
+_write_onboarding(onboarding_json, onboarding_file_path)
 
 print(
     f"Onboarding updated: {len(onboarding_json)} data flows"
@@ -2331,7 +2338,7 @@ display(
 # MAGIC   └── Silver (apply_changes_from_snapshot)
 # MAGIC ```
 # MAGIC
-# MAGIC See: [snapshot-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/snapshot-onboarding.template)
+# MAGIC See: [snapshot-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/snapshot-onboarding.template)
 
 # COMMAND ----------
 
@@ -2403,7 +2410,7 @@ snap_products_feed = {
     },
     "silver_transformation_json_prod": (
         f"{transformation_path}"
-        "/snapshot_silver_transformations.json"
+        f"/snapshot_silver_transformations.{conf_ext}"
     ),
 }
 
@@ -2439,17 +2446,15 @@ snap_stores_feed = {
     },
     "silver_transformation_json_prod": (
         f"{transformation_path}"
-        "/snapshot_silver_transformations.json"
+        f"/snapshot_silver_transformations.{conf_ext}"
     ),
 }
 
-with open(onboarding_file_path, "r") as fh:
-    onboarding_json = json.load(fh)
+onboarding_json = _read_onboarding(onboarding_file_path)
 
 onboarding_json.extend([snap_products_feed, snap_stores_feed])
 
-with open(onboarding_file_path, "w") as fh:
-    json.dump(onboarding_json, fh, indent=2)
+_write_onboarding(onboarding_json, onboarding_file_path)
 
 print(
     f"Onboarding updated: {len(onboarding_json)} data flows"
@@ -2780,7 +2785,7 @@ display(spark.sql(f"""
 # MAGIC   └─── Quarantine Table (iot_events_quarantine)
 # MAGIC ```
 # MAGIC
-# MAGIC See: [kafka-sink-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/kafka-sink-onboarding.template)
+# MAGIC See: [kafka-sink-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/kafka-sink-onboarding.template)
 
 # COMMAND ----------
 
@@ -2817,7 +2822,7 @@ iot_sink_feed = {
         "header": "true",
     },
     "bronze_data_quality_expectations_json_prod": (
-        f"{dqe_path}/iot_events_bronze_dqe.json"
+        f"{dqe_path}/iot_events_bronze_dqe.{conf_ext}"
     ),
     "bronze_catalog_quarantine_prod": uc_catalog_name,
     "bronze_database_quarantine_prod": bronze_schema,
@@ -2839,13 +2844,11 @@ iot_sink_feed = {
     ],
 }
 
-with open(onboarding_file_path, "r") as fh:
-    onboarding_json = json.load(fh)
+onboarding_json = _read_onboarding(onboarding_file_path)
 
 onboarding_json.append(iot_sink_feed)
 
-with open(onboarding_file_path, "w") as fh:
-    json.dump(onboarding_json, fh, indent=2)
+_write_onboarding(onboarding_json, onboarding_file_path)
 
 print(
     f"Onboarding updated: {len(onboarding_json)} data flows"
@@ -3055,11 +3058,11 @@ display(spark.createDataFrame(summary_rows))
 # MAGIC ### Learn More
 # MAGIC - [Full Documentation](https://databrickslabs.github.io/dlt-meta/)
 # MAGIC - [Getting Started](https://databrickslabs.github.io/dlt-meta/getting_started/)
-# MAGIC - [Onboarding Template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/onboarding.template)
+# MAGIC - [Onboarding Template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/onboarding.template)
 # MAGIC - [Source Code](https://github.com/databrickslabs/dlt-meta/tree/main/src/databricks/labs/sdp_meta)
-# MAGIC - [Append Flows](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/cloudfiles-onboarding.template)
-# MAGIC - [Apply Changes from Snapshot](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/snapshot-onboarding.template)
-# MAGIC - [DLT Sink](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/kafka-sink-onboarding.template)
+# MAGIC - [Append Flows](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/cloudfiles-onboarding.template)
+# MAGIC - [Apply Changes from Snapshot](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/snapshot-onboarding.template)
+# MAGIC - [DLT Sink](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/kafka-sink-onboarding.template)
 # MAGIC - [DABs](https://github.com/databrickslabs/dlt-meta/tree/main/demo/dabs)
 
 # COMMAND ----------

@@ -6,6 +6,8 @@ import json
 import yaml
 import logging
 import ast
+import os
+import tempfile
 
 import pyspark.sql.types as T
 from pyspark.sql import functions as f
@@ -204,24 +206,43 @@ class OnboardDataflowspec:
             ]
         )
 
-        emp_rdd = []
         env = dict_obj["env"]
-        silver_transformation_json_df = self.spark.createDataFrame(
-            data=emp_rdd, schema=columns
+        silver_transformation_file_col = f"silver_transformation_json_{env}"
+        silver_transformation_files = (
+            onboarding_df.select(silver_transformation_file_col)
+            .dropDuplicates()
+            .collect()
         )
-        silver_transformation_json_file = onboarding_df.select(
-            f"silver_transformation_json_{env}"
-        ).dropDuplicates()
 
-        silver_transformation_json_files = silver_transformation_json_file.collect()
-        for row in silver_transformation_json_files:
-            silver_transformation_json_df = silver_transformation_json_df.union(
-                self.spark.read.option("multiline", "true")
-                .schema(columns)
-                .json(row[f"silver_transformation_json_{env}"])
-            )
+        schema_field_names = [field.name for field in columns.fields]
+        silver_transformation_rows = []
+        for row in silver_transformation_files:
+            file_path = row[silver_transformation_file_col]
+            if not file_path:
+                continue
+            parsed = self._load_structured_file(file_path)
+            if parsed is None:
+                continue
+            if not isinstance(parsed, list):
+                raise ValueError(
+                    f"Silver transformations file '{file_path}' must contain a list "
+                    f"of transformation entries; got {type(parsed).__name__}"
+                )
+            for entry in parsed:
+                if not isinstance(entry, dict):
+                    raise ValueError(
+                        f"Silver transformations file '{file_path}' contains a "
+                        f"non-mapping entry: {entry!r}"
+                    )
+                silver_transformation_rows.append(
+                    {name: entry.get(name) for name in schema_field_names}
+                )
 
-        logger.info(silver_transformation_json_file)
+        silver_transformation_json_df = self.spark.createDataFrame(
+            data=silver_transformation_rows, schema=columns
+        )
+
+        logger.info(f"Loaded {len(silver_transformation_rows)} silver transformation rows")
 
         silver_data_flow_spec_df = silver_transformation_json_df.join(
             silver_data_flow_spec_df,
@@ -386,47 +407,150 @@ class OnboardDataflowspec:
         _dict.update(filtered)
         return _dict
 
-    def convert_yml_to_json(self, onboarding_file_path):
-        """Get dataframe from YAML onboarding file.
+    def _load_structured_file(self, file_path):
+        """Load a JSON or YAML file via Spark and return the parsed Python object.
+
+        Supports ``.json``, ``.yml``, and ``.yaml`` extensions (case-insensitive).
+        Reads via ``spark.read.text`` so cloud paths (dbfs, volumes, s3, abfss)
+        work the same way they do for the existing JSON code paths.
+
         Args:
-            onboarding_file_path (str): Path to YAML onboarding file
+            file_path: Path to a structured config file. ``None`` or empty
+                returns ``None``.
+
         Returns:
-            DataFrame: Spark DataFrame containing onboarding data
+            Parsed Python object (typically ``dict`` or ``list``), or ``None``
+            if ``file_path`` is falsy.
+
         Raises:
-            Exception: If duplicate data_flow_ids found
+            ValueError: If the file extension is unsupported, the file is empty,
+                or the contents cannot be parsed.
         """
-        # Read YAML file as text
-        with open(onboarding_file_path, 'r') as yaml_file:
-            yaml_data = yaml.safe_load(yaml_file)
+        if not file_path:
+            return None
+        lower_path = file_path.lower()
+        if not lower_path.endswith((".json", ".yml", ".yaml")):
+            raise ValueError(
+                f"Unsupported file format for '{file_path}'. "
+                "Expected one of: .json, .yml, .yaml"
+            )
 
-        json_data = json.dumps(yaml_data, indent=4)
+        # Wrap Spark IO errors (AnalysisException for missing paths, etc.)
+        # so callers can rely on a single ValueError contract regardless of the
+        # backing reader's exception class.
+        try:
+            rows = self.spark.read.text(file_path, wholetext=True).collect()
+        except Exception as e:
+            raise ValueError(
+                f"Failed to read '{file_path}': {e}"
+            ) from e
+        if not rows or not rows[0]["value"]:
+            raise ValueError(f"File '{file_path}' is empty or unreadable")
+        text = rows[0]["value"]
 
-        onboarding_file_path = onboarding_file_path.replace(".yml", "_yml.json")
+        try:
+            if lower_path.endswith((".yml", ".yaml")):
+                return yaml.safe_load(text)
+            return json.loads(text)
+        except (yaml.YAMLError, json.JSONDecodeError) as e:
+            raise ValueError(f"Failed to parse '{file_path}': {e}") from e
 
-        with open(onboarding_file_path, 'w') as json_file:
-            json_file.write(json_data)
-        return onboarding_file_path
+    def convert_yml_to_json(self, onboarding_file_path):
+        """Convert a YAML onboarding file into a JSON file Spark can read.
+
+        Reads the YAML at ``onboarding_file_path`` via
+        :py:meth:`_load_structured_file` (which uses ``spark.read.text``, so
+        cloud paths like ``/Volumes/...``, ``dbfs:/...``, ``s3://...``,
+        ``abfss://...`` all work as *input*), serializes it to JSON, and
+        writes the result somewhere ``spark.read.json`` will be able to find
+        from any compute type (classic, serverless / Spark Connect).
+
+        Write strategy (in order):
+
+        1. **Sibling on the same FUSE-accessible filesystem** — preferred when
+           the source path is on a UC Volume (``/Volumes/...``), DBFS FUSE
+           (``/dbfs/...``), or local disk. The converted file is written as a
+           regular sibling (``<basename>_yml_converted.json``) so Spark reads
+           it back through the same filesystem as the source.
+
+           This is what makes serverless work: a bare ``/tmp/...`` path is
+           auto-prefixed with ``dbfs:`` by Spark on serverless compute, so a
+           file created via ``tempfile.mkdtemp`` becomes ``PATH_NOT_FOUND``.
+           A non-hidden filename (no leading ``.`` or ``_``) is required so
+           Spark's input-format listing does not skip it.
+        2. **Driver-local temp + ``file://`` prefix** — fallback used when
+           writing next to the source fails (e.g. the YAML lives on
+           ``s3://``/``abfss://`` and the executor sandbox cannot mount it
+           for write). The ``file://`` scheme forces Spark to read from the
+           driver's local filesystem instead of DBFS.
+
+        Args:
+            onboarding_file_path: Path to YAML onboarding file.
+
+        Returns:
+            str: Path to the JSON file in a form ``spark.read.json`` can
+            consume — either a same-scheme sibling path or a ``file://`` URL.
+
+        Raises:
+            ValueError: If the file cannot be read, is empty, or contains
+                invalid YAML.
+        """
+        yaml_data = self._load_structured_file(onboarding_file_path)
+        if yaml_data is None:
+            raise ValueError(
+                f"YAML onboarding file '{onboarding_file_path}' is empty "
+                "or could not be parsed"
+            )
+
+        base_name = os.path.splitext(os.path.basename(onboarding_file_path))[0]
+        parent_dir = os.path.dirname(onboarding_file_path)
+        sibling_path = os.path.join(parent_dir, f"{base_name}_yml_converted.json")
+
+        try:
+            with open(sibling_path, "w") as json_file:
+                json.dump(yaml_data, json_file, indent=4)
+            return sibling_path
+        except OSError:
+            tmp_dir = tempfile.mkdtemp(prefix="sdp_meta_onboarding_")
+            json_file_path = os.path.join(tmp_dir, f"{base_name}_yml_converted.json")
+            with open(json_file_path, "w") as json_file:
+                json.dump(yaml_data, json_file, indent=4)
+            return f"file://{json_file_path}"
 
     def __get_onboarding_file_dataframe(self, onboarding_file_path):
-        onboarding_df = None
-        if onboarding_file_path.lower().endswith((".yml", ".yaml")):
-            onboarding_file_path = self.convert_yml_to_json(onboarding_file_path)
-        if onboarding_file_path.lower().endswith(".json"):
-            onboarding_df = self.spark.read.option("multiline", "true").json(
-                onboarding_file_path
-            )
-            onboarding_df.show()
-            self.onboard_file_type = "json"
-            onboarding_df_dupes = (
-                onboarding_df.groupBy("data_flow_id").count().filter("count > 1")
-            )
-            if len(onboarding_df_dupes.head(1)) > 0:
-                onboarding_df_dupes.show()
-                raise Exception("onboarding file have duplicated data_flow_ids! ")
-        else:
+        """Read the onboarding file (JSON or YAML) into a Spark DataFrame.
+
+        JSON inputs are passed straight to ``spark.read.json``. YAML inputs
+        are first materialized to a JSON file by
+        :py:meth:`convert_yml_to_json` (which writes to a sibling on the same
+        filesystem as the source for serverless compatibility); see that
+        method's docstring for the exact write strategy and why bare
+        ``/tmp/...`` paths cannot be used on serverless / Spark Connect.
+        """
+        if not onboarding_file_path:
+            raise Exception("Onboarding file path is empty")
+        lower_path = onboarding_file_path.lower()
+        if not lower_path.endswith((".json", ".yml", ".yaml")):
             raise Exception(
-                "Onboarding file format not supported! Please provide json file format"
+                "Onboarding file format not supported! "
+                "Please provide a .json, .yml, or .yaml file"
             )
+
+        if lower_path.endswith(".json"):
+            json_path = onboarding_file_path
+        else:
+            json_path = self.convert_yml_to_json(onboarding_file_path)
+
+        onboarding_df = self.spark.read.option("multiline", "true").json(json_path)
+        onboarding_df.show()
+        self.onboard_file_type = "json"
+
+        onboarding_df_dupes = (
+            onboarding_df.groupBy("data_flow_id").count().filter("count > 1")
+        )
+        if len(onboarding_df_dupes.head(1)) > 0:
+            onboarding_df_dupes.show()
+            raise Exception("onboarding file have duplicated data_flow_ids! ")
         return onboarding_df
 
     def __add_audit_columns(self, df, dict_obj):
@@ -1096,19 +1220,32 @@ class OnboardDataflowspec:
                     {DataflowSpecUtils.append_flow_mandatory_attributes} exists"""
                 )
 
-    def __get_data_quality_expecations(self, json_file_path):
-        """Get Data Quality expections from json file.
+    def __get_data_quality_expecations(self, file_path):
+        """Get Data Quality expectations from a JSON or YAML file.
+
+        Returns the expectations serialized as a JSON string so that downstream
+        consumers (which call ``json.loads`` on the stored value) can keep using
+        the existing format. A YAML source file is parsed and re-serialized to
+        JSON; the on-wire dataflow spec is always JSON.
 
         Args:
-            json_file_path ([type]): [description]
+            file_path: Path to a ``.json``, ``.yml``, or ``.yaml`` file containing
+                DQ expectations. ``None`` or empty returns ``None``.
+
+        Returns:
+            JSON string of the parsed expectations, or ``None`` if ``file_path``
+            is falsy.
+
+        Raises:
+            ValueError: If the file extension is unsupported, the file is empty,
+                or the contents cannot be parsed.
         """
-        json_string = None
-        if json_file_path and json_file_path.endswith(".json"):
-            expectations_df = self.spark.read.text(json_file_path, wholetext=True)
-            expectations_arr = expectations_df.collect()
-            if len(expectations_arr) == 1:
-                json_string = expectations_df.collect()[0]["value"]
-        return json_string
+        if not file_path:
+            return None
+        parsed = self._load_structured_file(file_path)
+        if parsed is None:
+            return None
+        return json.dumps(parsed)
 
     def __get_silver_dataflow_spec_dataframe(self, onboarding_df, env):
         """Get silver_dataflow_spec method transform onboarding dataframe to silver dataflowSpec dataframe.

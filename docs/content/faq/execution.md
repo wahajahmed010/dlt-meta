@@ -12,9 +12,9 @@ Please refer to the [Getting Started]({{%relref "getting_started/_index.md" %}})
 **Q. How do I create metadata SDP-META ?**
 
 SDP-META needs following metadata files:
-- [Onboarding File](https://github.com/databrickslabs/sdp-meta/blob/main/examples/onboarding.template) captures input/output metadata 
-- [Data Quality Rules File](https://github.com/databrickslabs/sdp-meta/tree/main/examples/dqe) captures data quality rules
-- [Silver transformation File](https://github.com/databrickslabs/sdp-meta/blob/main/examples/silver_transformations.json) captures  processing logic as sql 
+- Onboarding File captures input/output metadata — JSON ([`examples/json/onboarding.template`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/onboarding.template)) or YAML ([`examples/yml/onboarding.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/yml/onboarding.yml))
+- Data Quality Rules File captures data quality rules — JSON ([`examples/json/dqe`](https://github.com/databrickslabs/sdp-meta/tree/main/examples/json/dqe)) or YAML ([`demo/conf/yml/dqe`](https://github.com/databrickslabs/sdp-meta/tree/main/demo/conf/yml/dqe))
+- Silver transformation File captures processing logic as sql — JSON ([`examples/json/silver_transformations.json`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/silver_transformations.json)) or YAML ([`demo/conf/yml/silver_transformations.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/yml/silver_transformations.yml))
 
 **Q. What is DataflowSpecs?**
 
@@ -28,7 +28,7 @@ SDP-META uses data_flow_group to launch Lakeflow Declarative Pipelines, so all t
 **Q. Can we run onboarding for bronze layer only?**
 
 Yes! Please follow below steps:
-1. Bronze Metadata preparation ([example](https://github.com/databrickslabs/sdp-meta/blob/main/examples/bronze_onboarding.template))
+1. Bronze Metadata preparation — JSON ([`examples/json/bronze_onboarding.template`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/bronze_onboarding.template)) or YAML ([`examples/yml/bronze_onboarding.template.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/yml/bronze_onboarding.template.yml))
 2. Onboarding Job
     - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/#onboardjob)
     - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#onboardjob)
@@ -63,7 +63,7 @@ Yes! Please follow below steps:
 ```
 **Q. Can we run onboarding for silver layer only?**
 Yes! Please follow below steps:
-1. Bronze Metadata preparation ([example](https://github.com/databrickslabs/sdp-meta/blob/main/examples/onboarding_silverfanout.template))
+1. Silver Metadata preparation — JSON ([`examples/json/onboarding_silverfanout.template`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/onboarding_silverfanout.template)) or YAML ([`examples/yml/onboarding_silverfanout.template.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/yml/onboarding_silverfanout.template.yml))
 2. Onboarding Job
     - Option#1: [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/#onboardjob)
     - Option#2: [Manual Job](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_manual/#onboardjob)
@@ -100,7 +100,7 @@ Yes! Please follow below steps:
 **Q. How to chain multiple silver tables after bronze table?**
 - Example: After customers_cdc bronze table, can I have customers silver table reading from customers_cdc and another customers_clean silver table reading from customers_cdc? If so, how do I define these in onboarding.json?
 
-- You can run onboarding for additional silver customer_clean table by having [onboarding file](https://github.com/databrickslabs/sdp-meta/blob/main/examples/onboarding_silverfanout.template) and [silver transformation](https://github.com/databrickslabs/sdp-meta/blob/main/examples/silver_transformations_fanout.template) with filter condition for fan out.
+- You can run onboarding for additional silver customer_clean table by having an onboarding file ([JSON](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/onboarding_silverfanout.template) or [YAML](https://github.com/databrickslabs/sdp-meta/blob/main/examples/yml/onboarding_silverfanout.template.yml)) and a silver transformation file ([JSON](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/silver_transformations_fanout.template) or [YAML](https://github.com/databrickslabs/sdp-meta/blob/main/examples/yml/silver_transformations_fanout.template.yml)) with a filter condition for fan out.
 
 - Run onboarding for slilver layer in append mode("overwrite": "False") so it will append to existing silver tables.
 When you launch Lakeflow Declarative Pipeline it will read silver onboarding and run Lakeflow Declarative Pipeline for bronze source and silver as target

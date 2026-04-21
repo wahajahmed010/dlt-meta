@@ -1,5 +1,10 @@
 """Test OnboardDataflowSpec class."""
 import copy
+import json
+import os
+import shutil
+import tempfile
+import yaml
 from tests.utils import SDPFrameworkTestCase
 from databricks.labs.sdp_meta.onboard_dataflowspec import OnboardDataflowspec
 from databricks.labs.sdp_meta.dataflow_spec import BronzeDataflowSpec, SilverDataflowSpec
@@ -9,6 +14,18 @@ from pyspark.sql import DataFrame
 
 class OnboardDataflowspecTests(SDPFrameworkTestCase):
     """OnboardDataflowSpec Unit Test ."""
+
+    def _make_onboarder(self):
+        """Construct a minimal OnboardDataflowspec for direct-method tests.
+
+        The convert_yml_to_json tests below need an instance because
+        convert_yml_to_json delegates to ``self._load_structured_file`` (which
+        uses ``self.spark`` so cloud-path inputs work via Spark IO). The
+        params map is irrelevant for these tests; it only needs to satisfy
+        the constructor.
+        """
+        params = copy.deepcopy(self.onboarding_bronze_silver_params_map)
+        return OnboardDataflowspec(self.spark, params)
 
     def test_onboard_yml_bronze_dataflow_spec(self):
         """Test onboarding bronze dataflow spec from YAML file."""
@@ -23,6 +40,290 @@ class OnboardDataflowspecTests(SDPFrameworkTestCase):
         )
         # Check number of records matches YAML file
         self.assertEqual(bronze_df.count(), 3)  # Two dataflows in YAML
+
+    def test_convert_yml_to_json_does_not_modify_source(self):
+        """convert_yml_to_json must not overwrite or touch the original YAML file.
+
+        It is, however, expected to write a sibling ``<basename>_yml_converted.json``
+        next to the source on FUSE-writable filesystems — this is required for
+        Spark's JSON reader to find the file on serverless / Spark Connect
+        compute (where a bare ``/tmp/...`` path is auto-prefixed with
+        ``dbfs:`` and fails as ``PATH_NOT_FOUND``).
+        """
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            src_path = os.path.join(tmp_dir, "onboarding.yml")
+            shutil.copyfile("tests/resources/onboarding.yml", src_path)
+            with open(src_path, "r") as fh:
+                original_contents = fh.read()
+            original_mtime = os.path.getmtime(src_path)
+
+            json_path = self._make_onboarder().convert_yml_to_json(src_path)
+
+            self.assertTrue(os.path.exists(src_path), "source YAML file was deleted")
+            with open(src_path, "r") as fh:
+                self.assertEqual(fh.read(), original_contents, "source YAML file was modified")
+            self.assertEqual(os.path.getmtime(src_path), original_mtime)
+
+            self.assertTrue(json_path.endswith(".json"))
+            self.assertEqual(os.path.dirname(json_path), tmp_dir,
+                             "converted file must be written next to the source on "
+                             "FUSE-writable paths so Spark on serverless can find it")
+            self.assertEqual(os.path.basename(json_path), "onboarding_yml_converted.json",
+                             "converted sibling must be a non-hidden file (no '.' or '_' "
+                             "prefix) so Spark's JSON reader does not skip it")
+            with open(json_path, "r") as fh:
+                parsed = json.load(fh)
+            self.assertIsInstance(parsed, list)
+            self.assertEqual(len(parsed), 3)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_convert_yml_to_json_supports_yaml_extension(self):
+        """convert_yml_to_json must handle both .yml and .yaml extensions."""
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            src_path = os.path.join(tmp_dir, "onboarding.yaml")
+            shutil.copyfile("tests/resources/onboarding.yml", src_path)
+
+            json_path = self._make_onboarder().convert_yml_to_json(src_path)
+
+            self.assertTrue(json_path.endswith(".json"))
+            self.assertTrue(os.path.exists(json_path))
+            with open(json_path, "r") as fh:
+                parsed = json.load(fh)
+            self.assertEqual(len(parsed), 3)
+
+            with open(src_path, "r") as fh:
+                yaml.safe_load(fh)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_convert_yml_to_json_supports_uppercase_extension(self):
+        """convert_yml_to_json must handle uppercase .YML extensions."""
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            src_path = os.path.join(tmp_dir, "ONBOARDING.YML")
+            shutil.copyfile("tests/resources/onboarding.yml", src_path)
+
+            json_path = self._make_onboarder().convert_yml_to_json(src_path)
+
+            self.assertTrue(json_path.endswith(".json"))
+            with open(json_path, "r") as fh:
+                parsed = json.load(fh)
+            self.assertEqual(len(parsed), 3)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_convert_yml_to_json_unanchored_replace_does_not_mangle_path(self):
+        """A directory containing '.yml' in its name must not be mangled."""
+        tmp_dir = tempfile.mkdtemp(suffix=".yml_archive")
+        try:
+            src_path = os.path.join(tmp_dir, "onboarding.yml")
+            shutil.copyfile("tests/resources/onboarding.yml", src_path)
+
+            json_path = self._make_onboarder().convert_yml_to_json(src_path)
+
+            self.assertTrue(os.path.exists(json_path))
+            self.assertTrue(json_path.endswith(".json"))
+            self.assertEqual(json_path.count(".json"), 1,
+                             "directory with '.yml' in name should not be mangled")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_convert_yml_to_json_invalid_yaml_raises_value_error(self):
+        """Malformed YAML should produce a clear ValueError."""
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            src_path = os.path.join(tmp_dir, "bad.yml")
+            with open(src_path, "w") as fh:
+                fh.write("foo: [unclosed\n  bar: : :\n")
+
+            with self.assertRaises(ValueError) as ctx:
+                self._make_onboarder().convert_yml_to_json(src_path)
+            self.assertIn(src_path, str(ctx.exception))
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_convert_yml_to_json_missing_file_raises_value_error(self):
+        """Missing source file should raise ValueError, not bare OSError."""
+        with self.assertRaises(ValueError):
+            self._make_onboarder().convert_yml_to_json("/nonexistent/path/to/onboarding.yml")
+
+    def test_onboard_yaml_bronze_dataflow_spec(self):
+        """End-to-end onboarding works with .yaml extension."""
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            src_path = os.path.join(tmp_dir, "onboarding.yaml")
+            shutil.copyfile("tests/resources/onboarding.yml", src_path)
+
+            onboarding_params_map = copy.deepcopy(self.onboarding_bronze_silver_params_map)
+            onboarding_params_map["onboarding_file_path"] = src_path
+            onboard_dfs = OnboardDataflowspec(self.spark, onboarding_params_map)
+            onboard_dfs.onboard_bronze_dataflow_spec()
+            bronze_df = self.read_dataflowspec(
+                onboarding_params_map["database"],
+                onboarding_params_map["bronze_dataflowspec_table"]
+            )
+            self.assertEqual(bronze_df.count(), 3)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def _stage_silver_yaml_onboarding(self, tmp_dir, silver_yaml_payload):
+        """Stage a temp YAML onboarding file whose silver_transformation_json_dev
+        points at a temp YAML silver-transformations file containing the given
+        payload. Returns the path to the staged onboarding file.
+        """
+        silver_path = os.path.join(tmp_dir, "silver_transformations.yml")
+        with open(silver_path, "w") as fh:
+            fh.write(silver_yaml_payload)
+
+        with open("tests/resources/onboarding.yml", "r") as fh:
+            spec = yaml.safe_load(fh)
+        for entry in spec:
+            if "silver_transformation_json_dev" in entry:
+                entry["silver_transformation_json_dev"] = silver_path
+        onboarding_path = os.path.join(tmp_dir, "onboarding.yml")
+        with open(onboarding_path, "w") as fh:
+            yaml.safe_dump(spec, fh, sort_keys=False)
+        return onboarding_path
+
+    def test_silver_transformation_yaml_with_array_field_as_scalar_raises(self):
+        """Regression test: createDataFrame is stricter than spark.read.json.
+
+        Previously, silver transformations were loaded with
+        ``spark.read.option('multiline','true').schema(columns).json(path)``,
+        which silently coerced/dropped malformed values. The rewrite uses
+        ``spark.createDataFrame(rows, schema=columns)`` which raises a clear
+        TypeError if a value violates the declared schema. This test pins
+        that behavior so future regressions are intentional.
+
+        ``where_clause`` is declared as ``ArrayType(StringType())``. Supplying
+        a scalar string must now raise.
+        """
+        bad_yaml = (
+            "- target_table: customers\n"
+            "  select_exp:\n"
+            "    - id\n"
+            "  where_clause: 'id > 0'\n"  # WRONG: must be a list
+        )
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            onboarding_path = self._stage_silver_yaml_onboarding(tmp_dir, bad_yaml)
+            params = copy.deepcopy(self.onboarding_bronze_silver_params_map)
+            del params["bronze_dataflowspec_table"]
+            del params["bronze_dataflowspec_path"]
+            params["onboarding_file_path"] = onboarding_path
+            onboarder = OnboardDataflowspec(self.spark, params)
+            with self.assertRaises((TypeError, ValueError, Exception)):
+                onboarder.onboard_silver_dataflow_spec()
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_silver_transformation_yaml_with_well_formed_lists_succeeds(self):
+        """Companion to the strict-schema regression test: well-formed YAML still loads."""
+        good_yaml = (
+            "- target_table: customers\n"
+            "  select_exp:\n"
+            "    - id\n"
+            "    - email\n"
+            "  where_clause:\n"
+            "    - 'id IS NOT NULL'\n"
+            "- target_table: transactions\n"
+            "  select_exp:\n"
+            "    - id\n"
+            "  where_clause:\n"
+            "    - 'amount IS NOT NULL'\n"
+            "- target_table: iot_cdc\n"
+            "  select_exp:\n"
+            "    - device_id\n"
+            "  where_clause:\n"
+            "    - 'device_id IS NOT NULL'\n"
+        )
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            onboarding_path = self._stage_silver_yaml_onboarding(tmp_dir, good_yaml)
+            params = copy.deepcopy(self.onboarding_bronze_silver_params_map)
+            del params["bronze_dataflowspec_table"]
+            del params["bronze_dataflowspec_path"]
+            params["onboarding_file_path"] = onboarding_path
+            onboarder = OnboardDataflowspec(self.spark, params)
+            onboarder.onboard_silver_dataflow_spec()
+            silver_df = self.read_dataflowspec(
+                params["database"], params["silver_dataflowspec_table"]
+            )
+            self.assertEqual(silver_df.count(), 3)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_load_structured_file_json(self):
+        """_load_structured_file should parse JSON files."""
+        onboard_dfs = OnboardDataflowspec(
+            self.spark, copy.deepcopy(self.onboarding_bronze_silver_params_map)
+        )
+        result = onboard_dfs._load_structured_file("tests/resources/dqe/products.json")
+        self.assertIsInstance(result, dict)
+        self.assertIn("expect_or_drop", result)
+        self.assertEqual(result["expect_or_drop"]["valid_product_id"], "product_id IS NOT NULL")
+
+    def test_load_structured_file_yaml(self):
+        """_load_structured_file should parse YAML files identically to JSON."""
+        onboard_dfs = OnboardDataflowspec(
+            self.spark, copy.deepcopy(self.onboarding_bronze_silver_params_map)
+        )
+        json_result = onboard_dfs._load_structured_file("tests/resources/dqe/products.json")
+        yaml_result = onboard_dfs._load_structured_file("tests/resources/dqe/products.yml")
+        self.assertEqual(json_result, yaml_result)
+
+    def test_load_structured_file_silver_transformations_yaml(self):
+        """Silver transformations YAML should match the JSON fixture exactly."""
+        onboard_dfs = OnboardDataflowspec(
+            self.spark, copy.deepcopy(self.onboarding_bronze_silver_params_map)
+        )
+        json_result = onboard_dfs._load_structured_file("tests/resources/silver_transformations.json")
+        yaml_result = onboard_dfs._load_structured_file("tests/resources/silver_transformations.yml")
+        self.assertEqual(json_result, yaml_result)
+        self.assertEqual(len(yaml_result), 3)
+
+    def test_load_structured_file_unsupported_extension_raises(self):
+        """Unsupported extensions must raise instead of silently returning None."""
+        onboard_dfs = OnboardDataflowspec(
+            self.spark, copy.deepcopy(self.onboarding_bronze_silver_params_map)
+        )
+        with self.assertRaises(ValueError) as ctx:
+            onboard_dfs._load_structured_file("tests/resources/schema.ddl")
+        self.assertIn("Unsupported file format", str(ctx.exception))
+
+    def test_load_structured_file_none_returns_none(self):
+        """A falsy path should return None (caller-side guard preserved)."""
+        onboard_dfs = OnboardDataflowspec(
+            self.spark, copy.deepcopy(self.onboarding_bronze_silver_params_map)
+        )
+        self.assertIsNone(onboard_dfs._load_structured_file(None))
+        self.assertIsNone(onboard_dfs._load_structured_file(""))
+
+    def test_get_data_quality_expectations_yaml_round_trip(self):
+        """DQ expectations from a YAML file must produce the same JSON string as JSON."""
+        onboard_dfs = OnboardDataflowspec(
+            self.spark, copy.deepcopy(self.onboarding_bronze_silver_params_map)
+        )
+        json_dqe = onboard_dfs._OnboardDataflowspec__get_data_quality_expecations(
+            "tests/resources/dqe/products.json"
+        )
+        yaml_dqe = onboard_dfs._OnboardDataflowspec__get_data_quality_expecations(
+            "tests/resources/dqe/products.yml"
+        )
+        self.assertEqual(json.loads(json_dqe), json.loads(yaml_dqe))
+
+    def test_get_data_quality_expectations_unsupported_no_longer_silently_drops(self):
+        """The previous bug: non-.json file extensions silently returned None and dropped DQ rules."""
+        onboard_dfs = OnboardDataflowspec(
+            self.spark, copy.deepcopy(self.onboarding_bronze_silver_params_map)
+        )
+        with self.assertRaises(ValueError):
+            onboard_dfs._OnboardDataflowspec__get_data_quality_expecations(
+                "tests/resources/schema.ddl"
+            )
 
     def test_validate_params_for_onboardBronzeDataflowSpec(self):
         """Test for onboardDataflowspec parameters."""

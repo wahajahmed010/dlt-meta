@@ -277,7 +277,7 @@ This demo will perform following tasks:
 # Silver Fanout Demo
 - This demo will showcase the onboarding process for the silver fanout pattern.
     - Run the onboarding process for the bronze cars table, which contains data from various countries.
-    - Run the onboarding process for the silver tables, which have a `where_clause` based on the country condition specified in [silver_transformations_cars.json](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/silver_transformations_cars.json).
+    - Run the onboarding process for the silver tables, which have a `where_clause` based on the country condition specified in [`demo/conf/json/silver_transformations_cars.json`](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/json/silver_transformations_cars.json) (or its YAML sibling [`demo/conf/yml/silver_transformations_cars.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/yml/silver_transformations_cars.yml)).
     - Run the Bronze pipeline which will produce cars table.
     - Run Silver pipeline, fanning out from the bronze cars table to country-specific tables such as cars_usa, cars_uk, cars_germany, and cars_japan.
 
