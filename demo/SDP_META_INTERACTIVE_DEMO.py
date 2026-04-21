@@ -1196,42 +1196,70 @@ print(f"\n=== Config ===\n  {os.listdir(conf_path)}")
 
 from string import Template
 
+import requests
 
-def _resolve_repo_root_workspace_path():
-    """Best-effort: locate the dlt-meta repo root in the workspace.
 
-    When the notebook lives at e.g.
-      /Users/<me>/dlt-meta/demo/SDP_META_INTERACTIVE_DEMO
-    we strip back to the parent of `/demo/` and prefix `/Workspace` so
-    the sample file is readable as a POSIX path on DBR >= 13.3.
+def _load_sample_onboarding_text(onboarding_format, conf_ext, git_branch):
+    """Load the committed sample onboarding file for the chosen format.
+
+    Resolution order (first match wins):
+
+    1. **Workspace co-located** — when the notebook was imported as part of
+       the dlt-meta repo (so its workspace path contains ``/demo/``), we
+       read the sibling ``demo/conf/{json|yml}/sample_onboarding.{json|yml}``
+       directly via ``open()``. Fast, offline-friendly.
+    2. **GitHub raw fallback** — when the notebook was uploaded standalone
+       (no ``/demo/`` in its workspace path, no co-located repo files), we
+       fetch the same sample file from
+       ``raw.githubusercontent.com/databrickslabs/dlt-meta/<git_branch>/...``.
+       This mirrors the GitHub-download path already used in stage 1 for
+       datasets, so the ``git_branch`` widget controls both.
+
+    Returns:
+        tuple[str, str]: ``(sample_text, source_label)`` where
+        ``source_label`` is the path/URL the text was loaded from (for
+        display in the cell output).
     """
+    rel_path = f"demo/conf/{onboarding_format}/sample_onboarding.{conf_ext}"
+
     ctx = (
         dbutils.notebook.entry_point.getDbutils()
         .notebook()
         .getContext()
     )
     nb_path = ctx.notebookPath().get()
-    if "/demo/" not in nb_path:
-        raise RuntimeError(
-            "Cannot locate the dlt-meta repo root from this notebook's "
-            f"path ({nb_path}). The notebook must be imported under "
-            "the dlt-meta repo (so `…/demo/SDP_META_INTERACTIVE_DEMO` "
-            "resolves) for sample loading to work."
-        )
-    repo_root_ws = nb_path.rsplit("/demo/", 1)[0]
-    if not repo_root_ws.startswith("/Workspace"):
-        repo_root_ws = "/Workspace" + repo_root_ws
-    return repo_root_ws
+
+    if "/demo/" in nb_path:
+        repo_root_ws = nb_path.rsplit("/demo/", 1)[0]
+        if not repo_root_ws.startswith("/Workspace"):
+            repo_root_ws = "/Workspace" + repo_root_ws
+        ws_path = f"{repo_root_ws}/{rel_path}"
+        try:
+            with open(ws_path, "r") as fh:
+                return fh.read(), ws_path
+        except (FileNotFoundError, IsADirectoryError, PermissionError):
+            pass
+
+    raw_url = (
+        f"https://raw.githubusercontent.com/databrickslabs/dlt-meta/"
+        f"{git_branch}/{rel_path}"
+    )
+    resp = requests.get(raw_url, timeout=30)
+    if resp.status_code == 200:
+        return resp.text, raw_url
+    raise RuntimeError(
+        f"Could not load sample onboarding file. Notebook path "
+        f"({nb_path}) is not under a dlt-meta repo checkout, and the "
+        f"GitHub fallback at {raw_url} returned HTTP "
+        f"{resp.status_code}. Either re-import the notebook under the "
+        f"dlt-meta repo, or set the 'git_branch' widget to a branch that "
+        f"contains {rel_path}."
+    )
 
 
-_repo_root_ws = _resolve_repo_root_workspace_path()
-sample_onboarding_path = (
-    f"{_repo_root_ws}/demo/conf/{onboarding_format}"
-    f"/sample_onboarding.{conf_ext}"
+sample_text, sample_onboarding_source = _load_sample_onboarding_text(
+    onboarding_format, conf_ext, git_branch
 )
-
-with open(sample_onboarding_path, "r") as fh:
-    sample_text = fh.read()
 
 rendered_text = Template(sample_text).safe_substitute(
     data_path=data_path,
@@ -1244,7 +1272,7 @@ rendered_text = Template(sample_text).safe_substitute(
 )
 
 print(
-    f"--- {sample_onboarding_path} (rendered as {onboarding_format}) ---\n"
+    f"--- {sample_onboarding_source} (rendered as {onboarding_format}) ---\n"
 )
 print(rendered_text)
 
