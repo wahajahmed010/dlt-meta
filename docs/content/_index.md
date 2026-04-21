@@ -15,9 +15,9 @@ The framework leverages metadata recorded in an onboarding JSON file (the Datafl
 ### SDP-META components:
 
 #### Metadata Interface 
-- Capture input/output metadata in [onboarding file](https://github.com/databrickslabs/sdp-meta/blob/main/examples/onboarding.template)
-- Capture [Data Quality Rules](https://github.com/databrickslabs/sdp-meta/tree/main/examples/dqe/customers/bronze_data_quality_expectations.json)
-- Capture  processing logic as sql in [Silver transformation file](https://github.com/databrickslabs/sdp-meta/blob/main/examples/silver_transformations.json)
+- Capture input/output metadata in an onboarding file — JSON ([`examples/json/onboarding.template`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/onboarding.template)) or YAML ([`examples/yml/onboarding.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/yml/onboarding.yml))
+- Capture [Data Quality Rules](https://github.com/databrickslabs/sdp-meta/tree/main/examples/json/dqe/customers/bronze_data_quality_expectations.json) (JSON or YAML)
+- Capture processing logic as sql in a [Silver transformation file](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/silver_transformations.json) (JSON or YAML)
 
 #### Generic Declarative Pipeline
 - Apply appropriate readers based on input metadata

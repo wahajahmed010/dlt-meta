@@ -7,21 +7,45 @@ draft: false
 
 
 ### Directory structure
+Repo layout for the bundled demo configs (each format lives in its own subdirectory):
+
 ```
-conf/
-    onboarding.json
-    silver_transformations.json
-    dqe/
-        bronze_data_quality_expectations.json
+demo/conf/
+    json/
+        onboarding.template
+        silver_transformations.json
+        dqe/
+            customers.json
+            ...
+    yml/
+        onboarding.template.yml
+        silver_transformations.yml
+        dqe/
+            customers.yml
+            ...
 ```
 
-1. Create [onboarding.json](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/onboarding.template)
-2. Create [silver_transformations.json](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/silver_transformations.json)
-3. Create data quality rules json's for each entity e.g. [Data Quality Rules](https://github.com/databrickslabs/sdp-meta/tree/main/demo/conf/dqe/)
+Pick one format and stay in it — both trees are kept in sync. JSON examples:
 
-The `onboarding.json` file contains links to [silver_transformations.json](https://github.com/databrickslabs/sdp-meta/blob/3555aaa798881a9cfa65f89599f83d22d245d3c8/demo/conf/onboarding.template#L41C1-L42C1) and data quality expectation files [dqe](https://github.com/databrickslabs/sdp-meta/blob/3555aaa798881a9cfa65f89599f83d22d245d3c8/demo/conf/onboarding.template#L42).
+1. [`demo/conf/json/onboarding.template`](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/json/onboarding.template)
+2. [`demo/conf/json/silver_transformations.json`](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/json/silver_transformations.json)
+3. [`demo/conf/json/dqe/`](https://github.com/databrickslabs/sdp-meta/tree/main/demo/conf/json/dqe/)
 
-### onboarding.json File structure: Examples( [Autoloader](https://github.com/databrickslabs/sdp-meta/blob/main/examples/cloudfiles-onboarding.template), [Eventhub](https://github.com/databrickslabs/sdp-meta/blob/main/examples/eventhub-onboarding.template), [Kafka](https://github.com/databrickslabs/sdp-meta/blob/main/examples/kafka-onboarding.template) )
+YAML equivalents:
+
+1. [`demo/conf/yml/onboarding.template.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/yml/onboarding.template.yml)
+2. [`demo/conf/yml/silver_transformations.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/yml/silver_transformations.yml)
+3. [`demo/conf/yml/dqe/`](https://github.com/databrickslabs/sdp-meta/tree/main/demo/conf/yml/dqe/)
+
+Each onboarding template references its own format's silver-transformation and DQE files (the JSON template points at `/json/...`; the YAML template points at `/yml/...`).
+
+### Onboarding file structure (JSON or YAML)
+
+Onboarding samples are committed under `examples/json/` and `examples/yml/`. Pick whichever format you prefer — the runner accepts both.
+
+JSON examples: [Autoloader](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/cloudfiles-onboarding.template), [Eventhub](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/eventhub-onboarding.template), [Kafka](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/kafka-onboarding.template).
+
+YAML examples: [Autoloader](https://github.com/databrickslabs/sdp-meta/blob/main/examples/yml/cloudfiles-onboarding.template.yml), [Eventhub](https://github.com/databrickslabs/sdp-meta/blob/main/examples/yml/eventhub-onboarding.template.yml).
 `env` is your environment placeholder e.g `dev`, `prod`, `stag`
 | Field | Description |
 | :-----------: | :----------- |
@@ -79,7 +103,9 @@ The `onboarding.json` file contains links to [silver_transformations.json](https
 | expect_or_quarantine  | Specify multiple data quality sql for each field when records that fails validation will be dropped from main table and inserted into quarantine table specified in dataflowspec (only applicable for Bronze layer) |
 
 
-### Silver transformation File Structure([Example](https://github.com/databrickslabs/sdp-meta/blob/main/examples/silver_transformations.json))
+### Silver transformation file structure
+
+Examples: JSON ([`examples/json/silver_transformations.json`](https://github.com/databrickslabs/sdp-meta/blob/main/examples/json/silver_transformations.json)) or YAML (e.g. [`demo/conf/yml/silver_transformations.yml`](https://github.com/databrickslabs/sdp-meta/blob/main/demo/conf/yml/silver_transformations.yml)).
 | Field | Description |
 | :-----------: | :----------- |
 | target_table | Specify target table name : Type String | 
