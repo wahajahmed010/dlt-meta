@@ -1,4 +1,4 @@
-# sdp-meta DAB (Databricks Asset Bundle) interface
+# sdp-meta DAB (Declarative Automation Bundle) interface
 
 A summary of the new bundle-based deployment path for sdp-meta. This is the recommended way to deploy sdp-meta in any environment beyond ad-hoc exploration: state lives in git, you get `dev`/`prod` promotion for free, and there is no interactive CLI step.
 
@@ -559,9 +559,9 @@ The pre-existing `demo/dabs/` directory in the repo is left untouched — it rem
 ## See also
 
 - [`docs/content/getting_started/deploy_with_dabs.md`](docs/content/getting_started/deploy_with_dabs.md) — public-facing getting-started doc.
-- [`README.md`](README.md) → "Deploy with Databricks Asset Bundles" — top-level pointer.
+- [`README.md`](README.md) → "Deploy with Declarative Automation Bundles" — top-level pointer.
 - [`src/databricks/labs/sdp_meta/templates/dab/README.md`](src/databricks/labs/sdp_meta/templates/dab/README.md) — template maintainer notes (how to render locally, conventions).
 - Upstream Databricks docs:
-  - [Databricks Asset Bundles](https://docs.databricks.com/dev-tools/bundles/)
+  - [Declarative Automation Bundles](https://docs.databricks.com/aws/en/dev-tools/bundles/)
   - [`databricks bundle init`](https://docs.databricks.com/dev-tools/cli/bundle-commands.html#bundle-init)
   - [Lakeflow Declarative Pipelines](https://docs.databricks.com/aws/en/dlt/)

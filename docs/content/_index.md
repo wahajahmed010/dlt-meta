@@ -55,7 +55,7 @@ The framework leverages metadata recorded in an onboarding JSON file (the Datafl
 | [create_sink](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-sink) API support | Yes |
 | [SDP-META CLI](https://databrickslabs.github.io/sdp-meta/getting_started/sdp_meta_cli/) | Yes |
 | Bronze and Silver pipeline chaining | Yes |
-| [Databricks Asset Bundles](https://docs.databricks.com/aws/en/dev-tools/bundles/) | Yes |
+| [Declarative Automation Bundles](https://docs.databricks.com/aws/en/dev-tools/bundles/) | Yes |
 | [SDP-META UI](https://github.com/databrickslabs/sdp-meta/tree/main/lakehouse_app#sdp-meta-lakehouse-app-setup) | Yes |
 
 ## How much does it cost?

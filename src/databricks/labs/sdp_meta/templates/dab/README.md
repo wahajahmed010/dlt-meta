@@ -1,4 +1,4 @@
-# sdp-meta Databricks Asset Bundle template
+# sdp-meta Declarative Automation Bundle template
 
 Maintainer notes. Users normally don't read this — they invoke the template
 via `databricks labs sdp-meta bundle-init` (recommended) or directly via

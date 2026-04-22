@@ -808,7 +808,7 @@ def deploy_ui(sdp_meta: SDPMeta, form_data):
 
 
 # ---------------------------------------------------------------------------
-# DAB (Databricks Asset Bundle) command wrappers
+# DAB (Declarative Automation Bundle) command wrappers
 #
 # Mirror the onboard/deploy pattern: each wrapper takes the shared SDPMeta
 # instance, uses `sdp_meta._wsi` (a WorkspaceInstaller, set up in the SDPMeta

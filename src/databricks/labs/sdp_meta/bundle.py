@@ -1,4 +1,4 @@
-"""CLI helpers that expose sdp-meta as a Databricks Asset Bundle.
+"""CLI helpers that expose sdp-meta as a Declarative Automation Bundle.
 
 The three entry points consumed by the `databricks labs sdp-meta bundle ...`
 commands are module-level functions:

@@ -1,11 +1,11 @@
 ---
-title: "Deploy with Databricks Asset Bundles"
+title: "Deploy with Declarative Automation Bundles"
 date: 2026-04-21
 weight: 8
 draft: false
 ---
 
-sdp-meta ships a Databricks Asset Bundle (DAB) template so you can deploy the onboarding job and the Lakeflow Declarative Pipelines (LDP) from a plain bundle — no interactive `onboard`/`deploy` CLI, state lives in git, promotes across `dev`/`prod`.
+sdp-meta ships a [Declarative Automation Bundle](https://docs.databricks.com/aws/en/dev-tools/bundles/) (DAB) template so you can deploy the onboarding job and the Lakeflow Declarative Pipelines (LDP) from a plain bundle — no interactive `onboard`/`deploy` CLI, state lives in git, promotes across `dev`/`prod`.
 
 ## Prerequisites
 
