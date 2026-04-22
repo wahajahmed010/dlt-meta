@@ -33,5 +33,13 @@ targets:
     permissions:
       - group_name: users
         level: CAN_VIEW
+    # Recommended for CI/CD: run prod jobs/pipelines under a service principal so
+    # the bundle is decoupled from any one user account. Leave commented out for
+    # ad-hoc/manual prod deploys (the deploying user is used as run_as in that
+    # case). When you uncomment, replace the placeholder with the application_id
+    # of a workspace-admin-granted service principal; `bundle-validate` will
+    # flag the placeholder until you do.
+    # run_as:
+    #   service_principal_name: <your-prod-service-principal-application-id>
     variables:
       development_enabled: false

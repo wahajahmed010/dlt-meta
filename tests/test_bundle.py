@@ -29,6 +29,7 @@ from unittest.mock import MagicMock, patch
 import yaml
 
 from databricks.labs.sdp_meta.bundle import (
+    QUICKSTART_BUNDLE_INIT_DEFAULTS,
     TEMPLATE_DIR,
     BundleAddFlowCommand,
     BundleInitCommand,
@@ -40,6 +41,7 @@ from databricks.labs.sdp_meta.bundle import (
     bundle_init,
     bundle_prepare_wheel,
     bundle_validate,
+    write_quickstart_config_file,
 )
 
 
@@ -93,6 +95,76 @@ class TemplateLayoutTests(unittest.TestCase):
             "from_inventory.py.tmpl",
         ):
             self.assertTrue((recipes_root / name).is_file(), f"recipes/{name} missing")
+
+    def test_databricks_yml_ships_run_as_block_commented(self):
+        """The prod target ships a guidance comment showing how to set
+        ``run_as: { service_principal_name: ... }``. It must stay commented
+        so ad-hoc / manual prod deploys don't break, but the comment must
+        exist so CI/CD users have a copy-pasteable starting point and the
+        ``bundle-validate`` placeholder check has a placeholder to react to
+        once the user uncomments it."""
+        tmpl = TEMPLATE_DIR / "template" / "{{.bundle_name}}" / "databricks.yml.tmpl"
+        text = tmpl.read_text()
+        self.assertIn(
+            "# run_as:", text,
+            "prod target must ship a commented `run_as:` guidance block",
+        )
+        self.assertIn(
+            "<your-prod-service-principal-application-id>", text,
+            "commented run_as block must use the <your-...> placeholder "
+            "convention so bundle-validate can flag it after uncomment",
+        )
+        # The block must live under the prod target, not dev. Check by
+        # finding the run_as line and walking backwards to the nearest
+        # target header.
+        lines = text.splitlines()
+        run_as_line = next(i for i, l in enumerate(lines) if "# run_as:" in l)
+        prior = "\n".join(lines[:run_as_line])
+        self.assertIn("prod:", prior)
+        # And no live `run_as:` (uncommented) — the shipped template must
+        # not opt users into SP execution by default.
+        self.assertNotRegex(
+            text,
+            r"^\s{2,}run_as:",
+            "shipped template must NOT have an uncommented run_as block; "
+            "users opt in by uncommenting.",
+        )
+
+    def test_quickstart_defaults_cover_every_schema_prompt(self):
+        """`bundle-init --quickstart` writes a config file that pre-answers
+        every schema prompt. If a new prompt is added to the schema and
+        nobody updates QUICKSTART_BUNDLE_INIT_DEFAULTS, `databricks bundle
+        init --config-file` will silently fall back to the prompt's default
+        for that key (or interactively prompt, defeating the point of
+        quickstart). This test fails loudly in that case."""
+        schema_path = TEMPLATE_DIR / "databricks_template_schema.json"
+        schema = json.loads(schema_path.read_text())
+        schema_keys = set(schema["properties"].keys())
+        quickstart_keys = set(QUICKSTART_BUNDLE_INIT_DEFAULTS.keys())
+        missing = schema_keys - quickstart_keys
+        self.assertFalse(
+            missing,
+            f"QUICKSTART_BUNDLE_INIT_DEFAULTS is missing keys present in "
+            f"the schema: {sorted(missing)}. Add a default for each new "
+            f"prompt in bundle.py.",
+        )
+        extra = quickstart_keys - schema_keys
+        self.assertFalse(
+            extra,
+            f"QUICKSTART_BUNDLE_INIT_DEFAULTS has keys not present in the "
+            f"schema: {sorted(extra)}. Remove or rename them.",
+        )
+        # Each quickstart default must satisfy the schema's enum (when
+        # declared) so `databricks bundle init --config-file` doesn't
+        # reject the file at parse time.
+        for key, value in QUICKSTART_BUNDLE_INIT_DEFAULTS.items():
+            enum = schema["properties"][key].get("enum")
+            if enum:
+                self.assertIn(
+                    value, enum,
+                    f"QUICKSTART_BUNDLE_INIT_DEFAULTS[{key!r}]={value!r} "
+                    f"is not in schema enum {enum}",
+                )
 
     def test_onboarding_job_uses_correct_wheel_entry_point(self):
         """The onboarding job must call `databricks_labs_sdp_meta:run`."""
@@ -367,6 +439,97 @@ class SanityChecksTests(unittest.TestCase):
             errors = _sdp_meta_sanity_checks(tmp)
             self.assertEqual([e for e in errors if "placeholder" in e], [])
 
+    # --- databricks.yml placeholder coverage --------------------------------
+    # The same `<your-...>` rule that polices the onboarding file is now
+    # extended to the bundle config itself, so users who uncomment the
+    # production `run_as` block (or any other guidance comment we ship)
+    # without filling in the value are caught at validate time instead of
+    # discovering it on a failed `bundle deploy --target prod`.
+
+    def test_commented_databricks_yml_placeholder_is_not_flagged(self):
+        # Comments are stripped at YAML parse time, so a placeholder that
+        # only appears inside a `# ...` line must not produce an error.
+        # This is the default state of the shipped template -- regressing
+        # it would create a "you must edit databricks.yml" error on every
+        # freshly-rendered bundle.
+        with _tempdir() as tmp:
+            self._make_bundle(tmp, layer="bronze", with_bronze=True, with_silver=False)
+            (tmp / "databricks.yml").write_text(
+                "bundle: {name: t}\n"
+                "targets:\n"
+                "  prod:\n"
+                "    mode: production\n"
+                "    # run_as:\n"
+                "    #   service_principal_name: <your-prod-service-principal-application-id>\n"
+            )
+            errors = _sdp_meta_sanity_checks(tmp)
+            self.assertEqual(
+                [e for e in errors if "databricks.yml" in e], [],
+                "commented placeholders must not be flagged",
+            )
+
+    def test_uncommented_databricks_yml_placeholder_is_flagged(self):
+        with _tempdir() as tmp:
+            self._make_bundle(tmp, layer="bronze", with_bronze=True, with_silver=False)
+            (tmp / "databricks.yml").write_text(
+                "bundle: {name: t}\n"
+                "targets:\n"
+                "  prod:\n"
+                "    mode: production\n"
+                "    run_as:\n"
+                "      service_principal_name: <your-prod-service-principal-application-id>\n"
+            )
+            errors = _sdp_meta_sanity_checks(tmp)
+            placeholder_errors = [e for e in errors if "databricks.yml" in e]
+            self.assertEqual(len(placeholder_errors), 1, placeholder_errors)
+            self.assertIn(
+                "targets.prod.run_as.service_principal_name",
+                placeholder_errors[0],
+            )
+            self.assertIn(
+                "<your-prod-service-principal-application-id>",
+                placeholder_errors[0],
+            )
+
+    def test_databricks_yml_placeholder_check_recurses_into_lists(self):
+        # `permissions:` is a list of dicts in real bundles; make sure the
+        # walker doesn't silently skip placeholders nested inside list items.
+        with _tempdir() as tmp:
+            self._make_bundle(tmp, layer="bronze", with_bronze=True, with_silver=False)
+            (tmp / "databricks.yml").write_text(
+                "bundle: {name: t}\n"
+                "targets:\n"
+                "  prod:\n"
+                "    mode: production\n"
+                "    permissions:\n"
+                "      - user_name: <your-admin-user-email>\n"
+                "        level: CAN_MANAGE\n"
+            )
+            errors = _sdp_meta_sanity_checks(tmp)
+            placeholder_errors = [e for e in errors if "databricks.yml" in e]
+            self.assertEqual(len(placeholder_errors), 1, placeholder_errors)
+            self.assertIn(
+                "targets.prod.permissions[0].user_name",
+                placeholder_errors[0],
+            )
+
+    def test_real_databricks_yml_values_pass(self):
+        # An uncommented run_as block with a *real* SP application id must
+        # not produce a placeholder error -- only the literal `<your-...>`
+        # marker should fire.
+        with _tempdir() as tmp:
+            self._make_bundle(tmp, layer="bronze", with_bronze=True, with_silver=False)
+            (tmp / "databricks.yml").write_text(
+                "bundle: {name: t}\n"
+                "targets:\n"
+                "  prod:\n"
+                "    mode: production\n"
+                "    run_as:\n"
+                "      service_principal_name: 12345678-1234-1234-1234-123456789012\n"
+            )
+            errors = _sdp_meta_sanity_checks(tmp)
+            self.assertEqual([e for e in errors if "databricks.yml" in e], [])
+
 
 class BundleInitUnitTests(unittest.TestCase):
     """bundle_init wraps `databricks bundle init`; mock the subprocess."""
@@ -410,6 +573,39 @@ class BundleInitUnitTests(unittest.TestCase):
         with _tempdir() as tmp:
             rc = bundle_init(BundleInitCommand(output_dir=str(tmp)))
             self.assertEqual(rc, 7)
+
+
+class QuickstartConfigFileTests(unittest.TestCase):
+    """Pure-Python coverage for the `bundle-init --quickstart` config builder.
+
+    Doesn't touch the `databricks` CLI -- that path is exercised by the
+    `EndToEndRenderTests.test_quickstart_renders_runnable_bundle` smoke test."""
+
+    def test_writes_json_with_every_default_key(self):
+        with _tempdir() as tmp:
+            path = write_quickstart_config_file(tmp)
+            self.assertTrue(path.is_file())
+            self.assertEqual(path.parent.resolve(), Path(tmp).resolve())
+            written = json.loads(path.read_text())
+            for key, expected in QUICKSTART_BUNDLE_INIT_DEFAULTS.items():
+                self.assertEqual(written[key], expected, f"key {key!r}")
+
+    def test_quickstart_keeps_set_me_sentinel_for_dependency(self):
+        # Quickstart deliberately leaves `sdp_meta_dependency` as the
+        # sentinel so users see the (intended) `bundle-validate` failure
+        # and consciously pick PyPI vs UC-volume wheel before deploy.
+        # If somebody "helpfully" replaces this with a real value, both
+        # the bundle-validate sentinel-check error and the docs flow
+        # become incoherent.
+        self.assertEqual(
+            QUICKSTART_BUNDLE_INIT_DEFAULTS["sdp_meta_dependency"], "__SET_ME__"
+        )
+
+    def test_quickstart_creates_dest_dir_if_missing(self):
+        with _tempdir() as tmp:
+            nested = Path(tmp) / "does" / "not" / "exist"
+            path = write_quickstart_config_file(nested)
+            self.assertTrue(path.is_file())
 
 
 class BundlePrepareWheelUnitTests(unittest.TestCase):
@@ -869,6 +1065,72 @@ class EndToEndRenderTests(unittest.TestCase):
         with _tempdir() as tmp:
             rendered = self._render(self._common_answers(), tmp)
             self._assert_rendered_bundle_is_valid(rendered, expect_ext="yml", expect_layer="bronze_silver")
+
+    def test_rendered_databricks_yml_keeps_run_as_block_commented(self):
+        """E2E lock-in: the run_as guidance lives in the rendered bundle so
+        users see it; it stays commented so a fresh `bundle deploy` works
+        without an SP set up; and it uses the `<your-...>` placeholder
+        convention so `bundle-validate` flags it the moment a user
+        uncomments without filling it in."""
+        with _tempdir() as tmp:
+            rendered = self._render(self._common_answers(), tmp)
+            db_yml = (rendered / "databricks.yml").read_text()
+            self.assertIn("# run_as:", db_yml)
+            self.assertRegex(
+                db_yml,
+                r"#\s+service_principal_name:\s*<your-prod-service-principal-application-id>",
+            )
+            # Belt-and-suspenders: parsed YAML (which drops comments) must
+            # NOT contain a live run_as block under prod -- the shipped
+            # template opts users in by uncomment, not by default.
+            parsed = yaml.safe_load(db_yml)
+            prod_target = parsed.get("targets", {}).get("prod", {})
+            self.assertNotIn(
+                "run_as", prod_target,
+                "shipped prod target must not have a parsed (live) "
+                "run_as block; users opt in by uncommenting",
+            )
+            # Sanity-check still passes (commented placeholder = no error).
+            self._strip_placeholders(rendered / "conf" / "onboarding.yml", "yml")
+            self.assertEqual(_sdp_meta_sanity_checks(rendered), [])
+
+    def test_quickstart_renders_runnable_bundle(self):
+        """Smoke test: feeding the QUICKSTART_BUNDLE_INIT_DEFAULTS dict to
+        `databricks bundle init --config-file` produces a bundle that
+        passes the sanity checks (modulo the deliberately-unfilled
+        `__SET_ME__` sdp_meta_dependency, which we patch in here)."""
+        with _tempdir() as tmp:
+            cfg = tmp / "quickstart.json"
+            cfg.write_text(json.dumps(QUICKSTART_BUNDLE_INIT_DEFAULTS))
+            subprocess.run(
+                [
+                    "databricks", "bundle", "init", str(TEMPLATE_DIR),
+                    "--output-dir", str(tmp),
+                    "--config-file", str(cfg),
+                ],
+                check=True,
+            )
+            rendered = tmp / QUICKSTART_BUNDLE_INIT_DEFAULTS["bundle_name"]
+            self.assertTrue(rendered.is_dir())
+
+            # Quickstart deliberately ships __SET_ME__; the validator must
+            # flag it. That's the WHOLE POINT of leaving it as the sentinel.
+            errors_before = _sdp_meta_sanity_checks(rendered)
+            self.assertTrue(
+                any("__SET_ME__" in e for e in errors_before),
+                f"quickstart bundle must flag __SET_ME__; got: {errors_before}",
+            )
+
+            # Fix the sentinel + strip onboarding placeholders, then prove
+            # the rest of the bundle is structurally sound.
+            vars_yml = rendered / "resources" / "variables.yml"
+            doc = yaml.safe_load(vars_yml.read_text())
+            doc["variables"]["sdp_meta_dependency"]["default"] = (
+                "databricks-labs-sdp-meta==0.0.11"
+            )
+            vars_yml.write_text(yaml.safe_dump(doc))
+            self._strip_placeholders(rendered / "conf" / "onboarding.yml", "yml")
+            self.assertEqual(_sdp_meta_sanity_checks(rendered), [])
 
     def test_bronze_only_json_kafka(self):
         with _tempdir() as tmp:

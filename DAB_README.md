@@ -7,7 +7,12 @@ A summary of the new bundle-based deployment path for sdp-meta. This is the reco
 ```bash
 databricks labs install sdp-meta
 
-databricks labs sdp-meta bundle-init          # answers prompts, scaffolds bundle
+# Fast path: zero prompts, dev-friendly defaults (cloudFiles + bronze_silver +
+# split + pypi). Edit resources/variables.yml afterwards to point at your real
+# catalog/schema/sdp_meta_dependency.
+databricks labs sdp-meta bundle-init --quickstart   # one shot, no prompts
+# OR walk through the prompts:
+databricks labs sdp-meta bundle-init                # 13 prompts
 cd <bundle_name>
 
 # (optional, until sdp-meta is on PyPI)
@@ -44,7 +49,7 @@ databricks bundle run pipelines  --target dev
 
 | Command | What it does |
 | --- | --- |
-| `databricks labs sdp-meta bundle-init` | Scaffolds a new bundle from the packaged template via `databricks bundle init`. Prompts for 12 knobs (see below). |
+| `databricks labs sdp-meta bundle-init` | Scaffolds a new bundle from the packaged template via `databricks bundle init`. Prompts for 13 knobs (see below). Pass `--quickstart` to skip every prompt and use developer defaults; pass `--output-dir <path>` to scaffold somewhere other than the current directory. |
 | `databricks labs sdp-meta bundle-prepare-wheel` | Builds the local sdp-meta wheel and uploads it to a UC volume. Prints the resulting `/Volumes/...` path so you can paste it into `resources/variables.yml` as the `sdp_meta_dependency` default. |
 | `databricks labs sdp-meta bundle-validate` | Runs `databricks bundle validate` plus sdp-meta-specific static checks. |
 | `databricks labs sdp-meta bundle-add-flow` | Appends one or more flow entries to the bundle's onboarding file. Two modes: single (interactive prompts per source format) and CSV (batch). Auto-increments `data_flow_id`, refuses to write on collisions, preserves YAML/JSON. |
@@ -56,6 +61,21 @@ databricks bundle run pipelines  --target dev
 - `dataflow_group` variable is not used by any flow in the onboarding file
 - `layer` variable doesn't match the pipelines actually declared
 - `pipeline_mode=combined` bundle has split pipelines (or vice versa)
+- `<your-...>` placeholders left in `conf/onboarding.{yml,json}` (eventhub keys, kafka brokers, etc.)
+- `<your-...>` placeholders left in `databricks.yml` itself — most commonly an uncommented `run_as.service_principal_name` block that still says `<your-prod-service-principal-application-id>`. (Comments are stripped at YAML parse time, so the shipped commented block is silent until you uncomment it.)
+
+### bundle-init --quickstart
+
+`--quickstart` is a non-interactive shortcut. It writes a `databricks bundle init --config-file` JSON pre-answering every template prompt with developer-friendly defaults — `cloudFiles + bronze_silver + split + pypi + onboarding.yml + dataflow_group=my_group + uc_catalog_name=main` — and then runs the bundle scaffolder. The only thing it deliberately leaves as the `__SET_ME__` sentinel is `sdp_meta_dependency`, so `bundle-validate` will still catch it before deploy. Typical first-time flow on a fresh checkout:
+
+```bash
+databricks labs sdp-meta bundle-init --quickstart
+cd my_sdp_meta_pipeline
+# point sdp_meta_dependency at a real PyPI coord OR a UC volume wheel:
+sed -i.bak 's/__SET_ME__/databricks-labs-sdp-meta==0.0.11/' resources/variables.yml
+databricks labs sdp-meta bundle-validate
+databricks bundle deploy --target dev
+```
 
 ## Template prompts
 
@@ -329,6 +349,36 @@ databricks bundle run pipelines  --target prod
 ```
 
 Per-target overrides (different catalogs / schemas / `sdp_meta_dependency`) live under `targets.<name>.variables` in `databricks.yml`.
+
+## Production deployments and `run_as`
+
+By default, both `dev` and `prod` targets run as the user invoking `databricks bundle deploy / run`. That's fine for ad-hoc / manual prod deploys, but for CI/CD you almost always want prod jobs and pipelines to run under a service principal so the bundle is decoupled from any one person's account (rotations, offboarding, vacation, etc.).
+
+The shipped `databricks.yml` includes a commented `run_as` block in the prod target as a copy-pasteable starting point:
+
+```yaml
+targets:
+  prod:
+    mode: production
+    permissions:
+      - group_name: users
+        level: CAN_VIEW
+    # Recommended for CI/CD: run prod jobs/pipelines under a service principal
+    # ...
+    # run_as:
+    #   service_principal_name: <your-prod-service-principal-application-id>
+    variables:
+      development_enabled: false
+```
+
+To opt in:
+
+1. Uncomment the `run_as:` lines in `databricks.yml`.
+2. Replace `<your-prod-service-principal-application-id>` with the **application_id** (a UUID) of a workspace-admin-granted service principal — not the display name. (`databricks service-principals list` shows both.)
+3. Run `databricks labs sdp-meta bundle-validate` — it will fail loudly if you uncommented but forgot to substitute, and pass once you have a real value.
+4. `databricks bundle deploy --target prod`.
+
+The placeholder is detected by walking the parsed `databricks.yml` (PyYAML drops comments at parse time, so the commented block is silent until you uncomment), so the same convention extends to anything else you add via `<your-...>` markers — e.g. an admin user_name on `permissions`, a workspace host pin, etc.
 
 ## Extending the seeded bundle
 

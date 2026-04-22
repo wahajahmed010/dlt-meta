@@ -334,6 +334,37 @@ def _find_edit_me_placeholders(
     return hits
 
 
+def _find_yaml_placeholders(doc: Any) -> List[Tuple[str, str]]:
+    """Walk an arbitrary parsed YAML/JSON document and return `<your-...>` hits.
+
+    Unlike :func:`_find_edit_me_placeholders` (which knows the onboarding
+    schema and reports per-flow), this is a generic dotted-path walker used
+    for files like ``databricks.yml`` where the schema is open-ended. PyYAML
+    discards comments at parse time, so commented-out blocks (e.g. the
+    suggested ``run_as:`` block in the prod target) are *not* flagged --
+    placeholders only fire when the user uncomments and forgets to fill in
+    the real value.
+
+    Each hit is ``(dotted_path, raw_value)``. Recurses into both dicts and
+    lists so deeply-nested structures (``targets.prod.run_as.service_principal_name``,
+    ``permissions[0].user_name``, ...) are covered.
+    """
+    hits: List[Tuple[str, str]] = []
+
+    def _walk(node: Any, prefix: str) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                _walk(v, f"{prefix}.{k}" if prefix else str(k))
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                _walk(v, f"{prefix}[{i}]")
+        elif isinstance(node, str) and _PLACEHOLDER_RE.search(node):
+            hits.append((prefix, node))
+
+    _walk(doc, "")
+    return hits
+
+
 def _sdp_meta_sanity_checks(bundle_dir: Path) -> List[str]:
     """sdp-meta-specific checks layered on top of `databricks bundle validate`.
 
@@ -343,6 +374,28 @@ def _sdp_meta_sanity_checks(bundle_dir: Path) -> List[str]:
     errors: List[str] = []
     conf_dir = bundle_dir / "conf"
     resources_dir = bundle_dir / "resources"
+
+    # databricks.yml itself: catch un-filled `<your-...>` placeholders that
+    # users may have introduced by uncommenting the run_as block (or any
+    # other guidance comment we ship with placeholder values). PyYAML drops
+    # comments at parse time, so this only fires once a user actually
+    # uncomments and forgets to substitute their real value.
+    databricks_yml = bundle_dir / "databricks.yml"
+    if databricks_yml.is_file():
+        try:
+            db_yml_doc = yaml.safe_load(databricks_yml.read_text())
+        except yaml.YAMLError as exc:
+            errors.append(f"databricks.yml: invalid YAML ({exc})")
+            db_yml_doc = None
+        if db_yml_doc is not None:
+            for dotted_field, value in _find_yaml_placeholders(db_yml_doc):
+                errors.append(
+                    f"databricks.yml: field `{dotted_field}` is still the "
+                    f"placeholder {value!r}. Replace it with a real value "
+                    "before deploying (e.g. uncomment + fill in run_as."
+                    "service_principal_name with your prod service principal "
+                    "application_id)."
+                )
 
     variables_yml = resources_dir / "variables.yml"
     if not variables_yml.is_file():
@@ -990,6 +1043,50 @@ def _load_bundle_init_config(wsi) -> BundleInitCommand:
     """Interactive loader used by `databricks labs sdp-meta bundle init`."""
     output_dir = wsi._question("Output directory for the new bundle", default=".")
     return BundleInitCommand(output_dir=output_dir)
+
+
+# Developer-friendly defaults used by `bundle-init --quickstart`. These mirror
+# the schema's `default` values for everything except `sdp_meta_dependency`,
+# which the user must still resolve (PyPI coordinate or `bundle-prepare-wheel`
+# output) before deploy. Keeping the values here in one place means both the
+# CLI wrapper and the test that asserts the produced config-file is sound
+# read from the same source of truth.
+QUICKSTART_BUNDLE_INIT_DEFAULTS: Dict[str, str] = {
+    "bundle_name": "my_sdp_meta_pipeline",
+    "uc_catalog_name": "main",
+    "sdp_meta_schema": "sdp_meta_dataflowspecs",
+    "bronze_target_schema": "sdp_meta_bronze",
+    "silver_target_schema": "sdp_meta_silver",
+    "layer": "bronze_silver",
+    "pipeline_mode": "split",
+    "source_format": "cloudFiles",
+    "onboarding_file_format": "yaml",
+    "dataflow_group": "my_group",
+    "wheel_source": "pypi",
+    "sdp_meta_dependency": "__SET_ME__",
+    "author": "sdp-meta-user",
+}
+
+
+def write_quickstart_config_file(dest_dir: Path) -> Path:
+    """Write a `databricks bundle init --config-file` JSON to ``dest_dir``.
+
+    The JSON pre-answers every prompt declared in
+    ``databricks_template_schema.json`` with the developer-friendly defaults
+    in :data:`QUICKSTART_BUNDLE_INIT_DEFAULTS`, so the user can scaffold a
+    runnable-modulo-credentials bundle in one shot without wading through
+    13 prompts. They still need to point ``sdp_meta_dependency`` at a real
+    PyPI coordinate or wheel before deploy (the schema's default is the
+    sentinel ``__SET_ME__`` and ``bundle-validate`` rejects it).
+
+    Returns the path to the written file. Caller is responsible for cleanup
+    if the file lives in a tmp dir.
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    cfg_path = dest_dir / "sdp_meta_quickstart.json"
+    cfg_path.write_text(json.dumps(QUICKSTART_BUNDLE_INIT_DEFAULTS, indent=2))
+    return cfg_path
 
 
 def _load_bundle_prepare_wheel_config(wsi) -> BundlePrepareWheelCommand:

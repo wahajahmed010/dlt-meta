@@ -1840,7 +1840,7 @@ class CliCommandWiringTests(unittest.TestCase):
         broke when the wiring was missing."""
         captured = {}
 
-        def fake_handler(sdp_meta):
+        def fake_handler(sdp_meta, flags=None):
             captured["called"] = True
             captured["sdp_meta_type"] = type(sdp_meta).__name__
 
@@ -1875,3 +1875,131 @@ class CliCommandWiringTests(unittest.TestCase):
                 main(payload)
             self.assertIn("definitely-not-a-real-command", str(ctx.exception))
             self.assertIn("Available", str(ctx.exception))
+
+    def test_main_passes_flags_to_bundle_wrapper(self):
+        """Wired with `cli.py::main()`: every `bundle-*` command must
+        receive the labs.yml-declared flags as kwargs, not as a payload
+        the wrapper has to re-parse. The `--quickstart` plumbing on
+        bundle-init is the load-bearing case."""
+        captured = {}
+
+        def fake_handler(sdp_meta, flags=None):
+            captured["flags"] = flags
+
+        with patch.dict(
+            "databricks.labs.sdp_meta.cli.MAPPING",
+            {"bundle-init": fake_handler},
+            clear=False,
+        ), patch("databricks.labs.sdp_meta.cli.WorkspaceClient") as ws_cls:
+            ws_cls.return_value = MagicMock()
+            payload = json.dumps({
+                "command": "bundle-init",
+                "flags": {
+                    "log_level": "disabled",
+                    "quickstart": "true",
+                    "output-dir": "/tmp/foo",
+                },
+            })
+            main(payload)
+
+        self.assertIsNotNone(captured.get("flags"))
+        self.assertEqual(captured["flags"].get("quickstart"), "true")
+        self.assertEqual(captured["flags"].get("output-dir"), "/tmp/foo")
+        # log_level must be popped before reaching the wrapper -- otherwise
+        # every wrapper would have to remember to filter it out.
+        self.assertNotIn("log_level", captured["flags"])
+
+
+class BundleInitQuickstartFlagTests(unittest.TestCase):
+    """The cli.py wrapper short-circuits the interactive prompt when
+    `--quickstart` is on. These tests exercise the wrapper directly
+    (not through main()) so they don't need the WorkspaceClient
+    plumbing -- they just prove the wrapper picks the right code path
+    for each flag combination."""
+
+    def _patched_run(self):
+        # Patch the bundle.bundle_init function the wrapper imports + calls
+        # so we can assert what BundleInitCommand it was given without
+        # actually invoking the databricks CLI.
+        return patch("databricks.labs.sdp_meta.bundle.bundle_init")
+
+    def test_quickstart_writes_config_file_and_passes_it(self):
+        from databricks.labs.sdp_meta.cli import bundle_init as cli_bundle_init
+        import tempfile
+
+        sdp_meta = MagicMock()
+        with tempfile.TemporaryDirectory() as tmp, self._patched_run() as fake_run:
+            fake_run.return_value = 0
+            cli_bundle_init(
+                sdp_meta,
+                flags={"quickstart": "true", "output-dir": tmp},
+            )
+            self.assertEqual(fake_run.call_count, 1)
+            cmd = fake_run.call_args[0][0]
+            self.assertEqual(cmd.output_dir, tmp)
+            self.assertIsNotNone(cmd.config_file)
+            cfg_path = cmd.config_file
+            self.assertTrue(cfg_path.endswith(".json"))
+            # The config file actually exists and is valid JSON pre-answering
+            # every schema prompt.
+            with open(cfg_path) as fh:
+                data = json.load(fh)
+            self.assertIn("bundle_name", data)
+            self.assertIn("wheel_source", data)
+            self.assertEqual(data["sdp_meta_dependency"], "__SET_ME__")
+            # Interactive prompt MUST NOT have been called.
+            sdp_meta._wsi._question.assert_not_called()
+            sdp_meta._wsi._choice.assert_not_called()
+
+    def test_no_quickstart_falls_back_to_interactive(self):
+        from databricks.labs.sdp_meta.cli import bundle_init as cli_bundle_init
+
+        sdp_meta = MagicMock()
+        # Mimic the interactive prompt returning "."
+        sdp_meta._wsi._question.return_value = "."
+        with self._patched_run() as fake_run:
+            fake_run.return_value = 0
+            cli_bundle_init(sdp_meta, flags={})
+            cmd = fake_run.call_args[0][0]
+            # Interactive path produces a BundleInitCommand without a
+            # config_file (the prompts answer the schema directly).
+            self.assertIsNone(cmd.config_file)
+            sdp_meta._wsi._question.assert_called()
+
+    def test_output_dir_flag_overrides_interactive_answer(self):
+        from databricks.labs.sdp_meta.cli import bundle_init as cli_bundle_init
+
+        sdp_meta = MagicMock()
+        sdp_meta._wsi._question.return_value = "/interactive/answer"
+        with self._patched_run() as fake_run:
+            fake_run.return_value = 0
+            cli_bundle_init(sdp_meta, flags={"output-dir": "/cli/wins"})
+            cmd = fake_run.call_args[0][0]
+            self.assertEqual(cmd.output_dir, "/cli/wins")
+
+
+class LabsYmlFlagDeclarationTests(unittest.TestCase):
+    """Lock-in: the labs.yml declares `--quickstart` (and other flags) so
+    `databricks labs sdp-meta bundle-init --quickstart` is a recognized
+    invocation. Without this, the labs CLI would reject the flag at
+    parse time and the user would never reach the wrapper."""
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parent.parent
+        with open(repo_root / "labs.yml") as fh:
+            cls._labs_yml = yaml.safe_load(fh)
+
+    def _flags_for(self, cmd_name):
+        for entry in self._labs_yml["commands"]:
+            if entry["name"] == cmd_name:
+                return {f["name"] for f in entry.get("flags") or []}
+        return None
+
+    def test_bundle_init_declares_quickstart_flag(self):
+        flags = self._flags_for("bundle-init")
+        self.assertIsNotNone(flags, "bundle-init missing from labs.yml")
+        self.assertIn("quickstart", flags)
+        self.assertIn("output-dir", flags)
