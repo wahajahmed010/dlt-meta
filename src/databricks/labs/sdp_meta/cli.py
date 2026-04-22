@@ -806,11 +806,72 @@ def deploy_ui(sdp_meta: SDPMeta, form_data):
     sdp_meta.deploy(cmd)
 
 
+# ---------------------------------------------------------------------------
+# DAB (Databricks Asset Bundle) command wrappers
+#
+# Mirror the onboard/deploy pattern: each wrapper takes the shared SDPMeta
+# instance, uses `sdp_meta._wsi` (a WorkspaceInstaller, set up in the SDPMeta
+# constructor) as the interactive prompter, and delegates to the matching
+# pure-function handler in `bundle.py`. The handlers themselves don't need
+# a WorkspaceClient -- they shell out to the `databricks` CLI -- but routing
+# them through SDPMeta keeps the dispatcher's signature uniform with the
+# legacy commands.
+#
+# These four entries MUST stay in lock-step with `labs.yml commands:` and
+# the `MAPPING` dict below. The `tests/test_cli.py::CliCommandWiringTests`
+# regression test enforces both.
+# ---------------------------------------------------------------------------
+
+
+def bundle_init(sdp_meta: SDPMeta):
+    logger.info("Scaffolding a new sdp-meta DAB from the packaged template.")
+    from databricks.labs.sdp_meta.bundle import (
+        _load_bundle_init_config,
+        bundle_init as _run,
+    )
+    _run(_load_bundle_init_config(sdp_meta._wsi))
+
+
+def bundle_prepare_wheel(sdp_meta: SDPMeta):
+    logger.info("Building the sdp-meta wheel and uploading it to a UC volume.")
+    from databricks.labs.sdp_meta.bundle import (
+        _load_bundle_prepare_wheel_config,
+        bundle_prepare_wheel as _run,
+    )
+    _run(_load_bundle_prepare_wheel_config(sdp_meta._wsi))
+
+
+def bundle_validate(sdp_meta: SDPMeta):
+    logger.info("Validating the sdp-meta DAB (databricks bundle validate + sanity checks).")
+    from databricks.labs.sdp_meta.bundle import (
+        _load_bundle_validate_config,
+        bundle_validate as _run,
+    )
+    rc = _run(_load_bundle_validate_config(sdp_meta._wsi))
+    if rc != 0:
+        sys.exit(rc)
+
+
+def bundle_add_flow(sdp_meta: SDPMeta):
+    logger.info("Appending flow entries to the bundle's onboarding file.")
+    from databricks.labs.sdp_meta.bundle import (
+        _load_bundle_add_flow_config,
+        bundle_add_flow as _run,
+    )
+    rc = _run(_load_bundle_add_flow_config(sdp_meta._wsi))
+    if rc != 0:
+        sys.exit(rc)
+
+
 MAPPING = {
     "onboard": onboard,
     "deploy": deploy,
     "onboard_ui": onboard_ui,
     "deploy_ui": deploy_ui,
+    "bundle-init": bundle_init,
+    "bundle-prepare-wheel": bundle_prepare_wheel,
+    "bundle-validate": bundle_validate,
+    "bundle-add-flow": bundle_add_flow,
 }
 
 

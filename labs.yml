@@ -10,3 +10,11 @@ commands:
     description: onboards sdp-meta configuration for bronze and silver layers
   - name: deploy
     description: Deploys sdp-meta pipelines for bronze and silver layers after onboarding dataflowspecs is complete
+  - name: bundle-init
+    description: Scaffold a new sdp-meta Databricks Asset Bundle (DAB) from the packaged template (onboarding job + Lakeflow Declarative Pipelines + variables + recipes)
+  - name: bundle-prepare-wheel
+    description: Build the local sdp-meta wheel and upload it to a UC volume (for wheel_source=volume_path bundles); prints the resulting /Volumes/... path to paste into resources/variables.yml
+  - name: bundle-validate
+    description: Run `databricks bundle validate` plus sdp-meta sanity checks (layer/topology consistency, wheel_source vs sdp_meta_dependency, onboarding placeholders, dataflow_group references) against a scaffolded bundle
+  - name: bundle-add-flow
+    description: Append flow entries to a bundle's conf/onboarding.{yml,json} (interactive single-flow prompts or batch from CSV); auto-increments data_flow_id and seeds silver_transformations.* for new silver flows

@@ -1766,3 +1766,112 @@ class CliTests(unittest.TestCase):
             SDPMeta._get_schema_from_json(oc_json)
         self.assertIn("sdp_meta_schema", str(context.exception))
         self.assertIn("dlt_meta_schema", str(context.exception))
+
+
+class CliCommandWiringTests(unittest.TestCase):
+    """Lock-in: every command declared in `labs.yml` must have a matching
+    handler in `cli.py::MAPPING`, and vice versa.
+
+    Background: the four `bundle-*` commands shipped on issue_278 with full
+    docstrings, docs, demo, and 122 unit/E2E tests -- but were never wired
+    into `labs.yml` or `MAPPING`. Every existing test exercised the bundle
+    handlers as plain Python imports, so the dispatcher gap (`cannot find
+    command: bundle-init`) sailed past CI. These assertions fail loudly
+    if anyone adds a command on one side without the other."""
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parent.parent
+        with open(repo_root / "labs.yml") as fh:
+            cls._labs_yml = yaml.safe_load(fh)
+
+    def _labs_yml_command_names(self):
+        return {entry["name"] for entry in self._labs_yml["commands"]}
+
+    def _mapping_keys(self):
+        from databricks.labs.sdp_meta.cli import MAPPING
+        return set(MAPPING.keys())
+
+    def test_every_labs_yml_command_has_a_mapping_handler(self):
+        labs_yml_cmds = self._labs_yml_command_names()
+        mapping = self._mapping_keys()
+        missing_in_mapping = labs_yml_cmds - mapping
+        self.assertFalse(
+            missing_in_mapping,
+            f"labs.yml declares commands with no MAPPING handler: "
+            f"{sorted(missing_in_mapping)}. Add a wrapper in cli.py and "
+            f"register it in MAPPING.",
+        )
+
+    def test_every_non_ui_mapping_handler_is_in_labs_yml(self):
+        # `*_ui` entries are intentionally NOT in labs.yml -- they're
+        # invoked by the install UI, not by `databricks labs sdp-meta`.
+        labs_yml_cmds = self._labs_yml_command_names()
+        mapping = self._mapping_keys()
+        non_ui_mapping = {k for k in mapping if not k.endswith("_ui")}
+        missing_in_yaml = non_ui_mapping - labs_yml_cmds
+        self.assertFalse(
+            missing_in_yaml,
+            f"MAPPING has handlers with no labs.yml entry: "
+            f"{sorted(missing_in_yaml)}. Add a `- name: <cmd>` entry to "
+            f"labs.yml so `databricks labs sdp-meta <cmd>` is reachable.",
+        )
+
+    def test_bundle_commands_are_wired_end_to_end(self):
+        """Belt-and-suspenders: each of the four bundle-* commands is
+        explicitly named here so the failure message is unambiguous if
+        somebody deletes one side of the wiring during cleanup."""
+        mapping = self._mapping_keys()
+        labs_yml_cmds = self._labs_yml_command_names()
+        for cmd in (
+            "bundle-init",
+            "bundle-prepare-wheel",
+            "bundle-validate",
+            "bundle-add-flow",
+        ):
+            self.assertIn(cmd, mapping, f"{cmd!r} missing from cli.MAPPING")
+            self.assertIn(cmd, labs_yml_cmds, f"{cmd!r} missing from labs.yml")
+
+    def test_main_dispatches_bundle_command_through_mapping(self):
+        """Functional smoke test: the `main()` dispatcher actually finds
+        and calls the wired bundle handler -- the exact code path that
+        broke when the wiring was missing."""
+        captured = {}
+
+        def fake_handler(sdp_meta):
+            captured["called"] = True
+            captured["sdp_meta_type"] = type(sdp_meta).__name__
+
+        with patch.dict(
+            "databricks.labs.sdp_meta.cli.MAPPING",
+            {"bundle-init": fake_handler},
+            clear=False,
+        ), patch("databricks.labs.sdp_meta.cli.WorkspaceClient") as ws_cls:
+            ws_cls.return_value = MagicMock()
+            payload = json.dumps({
+                "command": "bundle-init",
+                "flags": {"log_level": "disabled"},
+            })
+            main(payload)
+
+        self.assertTrue(captured.get("called"),
+                        "main() did not dispatch bundle-init through MAPPING")
+        self.assertEqual(captured.get("sdp_meta_type"), "SDPMeta")
+
+    def test_main_raises_clearly_for_unknown_command(self):
+        """Regression for the user-visible error string -- if anyone
+        rewrites the dispatcher and changes the message format, docs
+        and the bundle template's success_message go stale silently
+        unless this test catches it."""
+        with patch("databricks.labs.sdp_meta.cli.WorkspaceClient") as ws_cls:
+            ws_cls.return_value = MagicMock()
+            payload = json.dumps({
+                "command": "definitely-not-a-real-command",
+                "flags": {"log_level": "disabled"},
+            })
+            with self.assertRaises(KeyError) as ctx:
+                main(payload)
+            self.assertIn("definitely-not-a-real-command", str(ctx.exception))
+            self.assertIn("Available", str(ctx.exception))

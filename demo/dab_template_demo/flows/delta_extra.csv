@@ -1,0 +1,6 @@
+source_format,source_database,source_table,bronze_table,silver_table,data_flow_id,source_system
+delta,{uc_catalog_name}.staging,customers,customers,customers,auto,staging
+delta,{uc_catalog_name}.staging,transactions,transactions,transactions,auto,staging
+delta,{uc_catalog_name}.staging,orders,orders,orders,auto,staging
+delta,{uc_catalog_name}.staging,products,products,products,auto,staging
+delta,{uc_catalog_name}.staging,stores,stores,stores,auto,staging
