@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Callable, Optional
 import ast
-import dlt
+from pyspark import pipelines as dp
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import expr, struct
 from pyspark.sql.types import StructType, StructField
@@ -152,13 +152,13 @@ class DataflowPipeline:
         """Read DLT."""
         logger.info("In read function")
         if isinstance(self.dataflowSpec, BronzeDataflowSpec) and self.is_create_view():
-            dlt.view(
+            dp.temporary_view(
                 self.read_bronze,
                 name=self.view_name,
                 comment=f"input dataset view for {self.view_name}",
             )
         elif isinstance(self.dataflowSpec, SilverDataflowSpec) and self.is_create_view():
-            dlt.view(
+            dp.temporary_view(
                 self.read_silver,
                 name=self.view_name,
                 comment=f"input dataset view for {self.view_name}",
@@ -184,20 +184,20 @@ class DataflowPipeline:
                     json.loads(flow_schema) if flow_schema else None
                 )
                 if append_flow.source_format == "cloudFiles":
-                    dlt.view(pipeline_reader.read_dlt_cloud_files,
-                             name=f"{append_flow.name}_view",
-                             comment=f"append flow input dataset view for {append_flow.name}_view"
-                             )
+                    dp.temporary_view(pipeline_reader.read_dlt_cloud_files,
+                                      name=f"{append_flow.name}_view",
+                                      comment=f"append flow input dataset view for {append_flow.name}_view"
+                                      )
                 elif append_flow.source_format == "delta":
-                    dlt.view(pipeline_reader.read_dlt_delta,
-                             name=f"{append_flow.name}_view",
-                             comment=f"append flow input dataset view for {append_flow.name}_view"
-                             )
+                    dp.temporary_view(pipeline_reader.read_dlt_delta,
+                                      name=f"{append_flow.name}_view",
+                                      comment=f"append flow input dataset view for {append_flow.name}_view"
+                                      )
                 elif append_flow.source_format == "eventhub" or append_flow.source_format == "kafka":
-                    dlt.view(pipeline_reader.read_kafka,
-                             name=f"{append_flow.name}_view",
-                             comment=f"append flow input dataset view for {append_flow.name}_view"
-                             )
+                    dp.temporary_view(pipeline_reader.read_kafka,
+                                      name=f"{append_flow.name}_view",
+                                      comment=f"append flow input dataset view for {append_flow.name}_view"
+                                      )
         else:
             raise Exception(f"Append Flows not found for dataflowSpec={self.dataflowSpec}")
 
@@ -206,7 +206,7 @@ class DataflowPipeline:
         if self.dataflowSpec.sinks:
             dlt_sinks = DataflowSpecUtils.get_sinks(self.dataflowSpec.sinks, self.spark)
             for dlt_sink in dlt_sinks:
-                DLTSinkWriter(dlt_sink, self.view_name).write_to_sink()
+                DLTSinkWriter(self.spark, dlt_sink, self.view_name).write_to_sink()
         if isinstance(self.dataflowSpec, BronzeDataflowSpec):
             self.write_bronze()
         elif isinstance(self.dataflowSpec, SilverDataflowSpec):
@@ -246,7 +246,7 @@ class DataflowPipeline:
             else False
         )
 
-        dlt.table(
+        dp.table(
             self.write_to_delta,
             name=f"{target_table}",
             partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
@@ -430,7 +430,7 @@ class DataflowPipeline:
 
     def write_to_delta(self):
         """Write to Delta."""
-        return dlt.read_stream(self.view_name)
+        return self.spark.readStream.table(self.view_name)
 
     def apply_changes_from_snapshot(self):
         target_path = None if self.uc_enabled else self.dataflowSpec.targetDetails["path"]
@@ -450,7 +450,7 @@ class DataflowPipeline:
             else self.view_name
         )
 
-        dlt.create_auto_cdc_from_snapshot_flow(
+        dp.create_auto_cdc_from_snapshot_flow(
             target=target_table,
             source=source,
             keys=self.applyChangesFromSnapshot.keys,
@@ -486,8 +486,8 @@ class DataflowPipeline:
 
             # Create base table with expectations
             if expect_all_dict:
-                dlt_table_with_expectation = dlt.expect_all(expect_all_dict)(
-                    dlt.table(
+                dlt_table_with_expectation = dp.expect_all(expect_all_dict)(
+                    dp.table(
                         self.write_to_delta,
                         name=f"{target_table}",
                         table_properties=self.dataflowSpec.tableProperties,
@@ -500,8 +500,8 @@ class DataflowPipeline:
                 )
             if expect_all_or_fail_dict:
                 if expect_all_dict is None:
-                    dlt_table_with_expectation = dlt.expect_all_or_fail(expect_all_or_fail_dict)(
-                        dlt.table(
+                    dlt_table_with_expectation = dp.expect_all_or_fail(expect_all_or_fail_dict)(
+                        dp.table(
                             self.write_to_delta,
                             name=f"{target_table}",
                             table_properties=self.dataflowSpec.tableProperties,
@@ -513,12 +513,12 @@ class DataflowPipeline:
                         )
                     )
                 else:
-                    dlt_table_with_expectation = dlt.expect_all_or_fail(expect_all_or_fail_dict)(
+                    dlt_table_with_expectation = dp.expect_all_or_fail(expect_all_or_fail_dict)(
                         dlt_table_with_expectation)
             if expect_all_or_drop_dict:
                 if expect_all_dict is None and expect_all_or_fail_dict is None:
-                    dlt_table_with_expectation = dlt.expect_all_or_drop(expect_all_or_drop_dict)(
-                        dlt.table(
+                    dlt_table_with_expectation = dp.expect_all_or_drop(expect_all_or_drop_dict)(
+                        dp.table(
                             self.write_to_delta,
                             name=f"{target_table}",
                             table_properties=self.dataflowSpec.tableProperties,
@@ -530,7 +530,7 @@ class DataflowPipeline:
                         )
                     )
                 else:
-                    dlt_table_with_expectation = dlt.expect_all_or_drop(expect_all_or_drop_dict)(
+                    dlt_table_with_expectation = dp.expect_all_or_drop(expect_all_or_drop_dict)(
                         dlt_table_with_expectation)
             # Handle quarantine table (Bronze and Silver layers)
         if expect_or_quarantine_dict:
@@ -585,8 +585,8 @@ class DataflowPipeline:
             else:
                 q_cluster_by_auto = bool(q_cluster_by_auto_value) if q_cluster_by_auto_value else False
 
-            dlt.expect_all_or_drop(expect_or_quarantine_dict)(
-                dlt.table(
+            dp.expect_all_or_drop(expect_or_quarantine_dict)(
+                dp.table(
                     self.write_to_delta,
                     name=f"{quarantine_table}",
                     table_properties=self.dataflowSpec.quarantineTableProperties,
@@ -670,7 +670,7 @@ class DataflowPipeline:
             sequence_cols = [col.strip() for col in sequence_by.split(',')]
             sequence_by = struct(*sequence_cols)  # Use struct() from pyspark.sql.functions
 
-        dlt.create_auto_cdc_flow(
+        dp.create_auto_cdc_flow(
             target=target_table,
             source=self.view_name,
             keys=cdc_apply_changes.keys,
@@ -753,7 +753,7 @@ class DataflowPipeline:
             else False
         )
 
-        dlt.create_streaming_table(
+        dp.create_streaming_table(
             name=target_table,
             table_properties=self.dataflowSpec.tableProperties,
             partition_cols=DataflowSpecUtils.get_partition_cols(self.dataflowSpec.partitionColumns),
