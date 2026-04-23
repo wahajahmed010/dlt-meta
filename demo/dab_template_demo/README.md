@@ -236,7 +236,7 @@ python demo/launch_dab_template_demo.py \
   --uc-volume sdp_meta_wheels \
   --apply-prepare-wheel --apply-recipe --apply-deploy \
   --profile e2-demo \
-  --pip-index-url https://pypi-proxy.dev.databricks.com/simple
+  --pip-index-url https://pypi.internal.example.com/simple
 
 # 2) Combined: one LDP pipeline materializing both layers in a single DAG
 python demo/launch_dab_template_demo.py \
@@ -246,7 +246,7 @@ python demo/launch_dab_template_demo.py \
   --uc-volume sdp_meta_wheels \
   --apply-prepare-wheel --apply-recipe --apply-deploy \
   --profile e2-demo \
-  --pip-index-url https://pypi-proxy.dev.databricks.com/simple
+  --pip-index-url https://pypi.internal.example.com/simple
 ```
 
 Bundle directories (`demo_runs/dab_demo_cloudfiles_split/` vs
@@ -416,7 +416,7 @@ databricks bundle destroy --target dev --profile DEFAULT
 | `databricks CLI not on PATH` | Install the [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html). |
 | `bundle init failed ... one or more files already exist: dab_demo_*` | A previous run of the same scenario left a scaffold behind. The launcher now wipes the target directory before STAGE 1 by default; if you passed `--no-clean`, delete `--out-dir/<bundle_name>/` manually or drop the flag. |
 | `bundle init failed with exit code 1` | The catalog you passed doesn't exist or isn't visible from the profile. Check `--uc-catalog-name` and `--profile`. |
-| `pip subprocess-exited-with-error` / `Connection refused` during `bundle prepare-wheel` | The build host can't reach pypi.org. Pass `--pip-index-url https://pypi-proxy.dev.databricks.com/simple` (or set `PIP_INDEX_URL` in the env). |
+| `pip subprocess-exited-with-error` / `Connection refused` during `bundle prepare-wheel` | The build host can't reach pypi.org. Pass `--pip-index-url https://pypi.internal.example.com/simple` (or set `PIP_INDEX_URL` in the env) to point at your internal mirror. |
 | `RuntimeError: Schema cat.schema not found ... does not exist` | Should be self-healing now: `bundle-prepare-wheel` auto-creates the schema and volume by default. If you re-ran with `--no-create-missing-uc`, drop that flag. If schema creation fails with `PERMISSION_DENIED`, your principal needs `CREATE SCHEMA` on the catalog (or pick a `--uc-schema` you already own). |
 | `RuntimeError: Catalog 'X' not found ... Catalogs are not auto-created` | Catalogs require metastore-admin perms; pick a `--uc-catalog-name` you already have access to or have one created for you. |
 | `STAGE 5 sdp-meta sanity checks reported issues` and one is about `__SET_ME__` | You ran without `--apply-prepare-wheel` and the placeholder pinning didn't run for some reason; check that STAGE 2 ran for the failing scenario. |

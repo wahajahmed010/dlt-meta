@@ -24,6 +24,13 @@ The first 5 stages need NO workspace access (great for dev loops). Only the
 last stage talks to Databricks. Use ``--apply-prepare-wheel`` on its own to
 upload a real wheel without deploying.
 
+``--uc-schema`` is dual-purpose: it sets the schema for the wheel/demo-data
+UC volume AND drives the rendered bundle's target schemas
+(sdp_meta_schema = <uc-schema>, bronze = <uc-schema>_bronze,
+silver = <uc-schema>_silver). When omitted, each scenario falls back to
+its registered default (eg. ``sdp_meta_dab_demo_cf``) so the demo still
+runs without any schema flag.
+
 Usage:
     # Local exploration only - no workspace access needed.
     python demo/launch_dab_template_demo.py --scenario all \\
@@ -40,13 +47,22 @@ Usage:
         --uc-catalog-name main --apply-prepare-wheel --apply-deploy \\
         --uc-schema sdp_meta_dab_demo_kafka --uc-volume sdp_meta_wheels \\
         --profile DEFAULT
+
+    # Force a fresh deployment each run (instead of overwriting the existing
+    # dev deployment). --unique-bundle-name appends a UTC timestamp to
+    # bundle.name; --bundle-name-suffix is a human-readable tag.
+    python demo/launch_dab_template_demo.py --scenario cloudfiles_combined \\
+        --uc-catalog-name main --apply-deploy --unique-bundle-name \\
+        --profile DEFAULT
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -93,6 +109,15 @@ class Scenario:
     recipe_name: str
     recipe_args_template: List[str]  # supports {bundle_dir} and {uc_catalog_name} substitution
     description: str
+    # Per-scenario default UC schema names used when --uc-schema is NOT
+    # passed on the CLI. When --uc-schema IS passed, all three are derived
+    # from it via `_resolve_demo_schemas`. Keeping defaults out of the
+    # answer JSONs lets the launcher render the same template either with
+    # canned scenario-specific names (no flag) OR with user-provided ones
+    # (flag), without forking the answer files.
+    default_sdp_meta_schema: str = ""
+    default_bronze_target_schema: str = ""
+    default_silver_target_schema: str = ""
     # If True, the recipe is only attempted when --apply-recipe is set, because
     # it needs a real WorkspaceClient (no offline dry-run path). Today this
     # only applies to the `delta` scenario (recipes/from_uc.py lists UC tables).
@@ -114,6 +139,9 @@ SCENARIOS = {
             "Split bronze+silver, cloudFiles autoloader, YAML onboarding."
             " Demonstrates pipeline_mode=split and the from_volume recipe."
         ),
+        default_sdp_meta_schema="sdp_meta_dab_demo_cf",
+        default_bronze_target_schema="sdp_meta_bronze_dab_demo_cf",
+        default_silver_target_schema="sdp_meta_silver_dab_demo_cf",
     ),
     "cloudfiles_combined": Scenario(
         name="cloudfiles_combined",
@@ -134,6 +162,9 @@ SCENARIOS = {
             " cloudFiles autoloader, YAML onboarding. Same demo data as"
             " `cloudfiles`; only `pipeline_mode=combined` differs."
         ),
+        default_sdp_meta_schema="sdp_meta_dab_demo_cf",
+        default_bronze_target_schema="sdp_meta_bronze_dab_demo_cf",
+        default_silver_target_schema="sdp_meta_silver_dab_demo_cf",
     ),
     "kafka": Scenario(
         name="kafka",
@@ -150,6 +181,9 @@ SCENARIOS = {
             "Bronze-only, Kafka, JSON onboarding. Demonstrates layer=bronze,"
             " bundle-add-flow CSV mode, and the from_topics recipe."
         ),
+        default_sdp_meta_schema="sdp_meta_dab_demo_kafka",
+        default_bronze_target_schema="sdp_meta_bronze_dab_demo_kafka",
+        default_silver_target_schema="sdp_meta_silver_dab_demo_kafka",
     ),
     "eventhub": Scenario(
         name="eventhub",
@@ -167,6 +201,9 @@ SCENARIOS = {
             " Event Hubs source. Demonstrates pipeline_mode=combined and the"
             " same from_topics recipe used for Event Hubs."
         ),
+        default_sdp_meta_schema="sdp_meta_dab_demo_eh",
+        default_bronze_target_schema="sdp_meta_bronze_dab_demo_eh",
+        default_silver_target_schema="sdp_meta_silver_dab_demo_eh",
     ),
     "delta": Scenario(
         name="delta",
@@ -188,6 +225,9 @@ SCENARIOS = {
             " a UC schema. STAGE 4 needs --apply-recipe + --profile (workspace)."
         ),
         recipe_requires_workspace=True,
+        default_sdp_meta_schema="sdp_meta_dab_demo_delta",
+        default_bronze_target_schema="sdp_meta_bronze_dab_demo_delta",
+        default_silver_target_schema="sdp_meta_silver_dab_demo_delta",
     ),
 }
 
@@ -208,14 +248,118 @@ def _banner(stage: str, message: str) -> None:
     print(f"\n{bar}\n{stage}: {message}\n{bar}", flush=True)
 
 
-def _materialize_answers_file(scenario: Scenario, uc_catalog_name: str, dest_dir: Path) -> Path:
-    """Substitute the {uc_catalog_name} placeholder and write to dest_dir."""
+def _resolve_demo_schemas(scenario: Scenario, uc_schema: Optional[str]) -> Dict[str, str]:
+    """Resolve the three demo target schemas for a scenario.
+
+    When ``--uc-schema`` is passed on the CLI, ALL three are derived from
+    it (sdp_meta_schema = <uc-schema>, bronze = <uc-schema>_bronze, silver
+    = <uc-schema>_silver). When it is NOT passed, the per-scenario
+    defaults registered on the Scenario dataclass are used (preserving the
+    previous hardcoded behaviour). This lets a single ``--uc-schema`` flag
+    drive both the wheel-volume schema (used by `bundle_prepare_wheel`)
+    AND the dataflowspec / bronze / silver target schemas (used by the
+    rendered bundle).
+
+    Note: when ``--scenario all`` is used together with ``--uc-schema``,
+    every scenario will share the same target schemas and bundle deploys
+    will collide on dataflowspec / bronze / silver tables. Either pick a
+    single scenario, or omit ``--uc-schema`` to fall back to the
+    per-scenario defaults.
+    """
+    if uc_schema:
+        return {
+            "sdp_meta_schema": uc_schema,
+            "bronze_target_schema": f"{uc_schema}_bronze",
+            "silver_target_schema": f"{uc_schema}_silver",
+        }
+    return {
+        "sdp_meta_schema": scenario.default_sdp_meta_schema,
+        "bronze_target_schema": scenario.default_bronze_target_schema,
+        "silver_target_schema": scenario.default_silver_target_schema,
+    }
+
+
+def _render_answers_dict(scenario: Scenario, uc_catalog_name: str,
+                         uc_schema: Optional[str]) -> Dict:
+    """Read the scenario's answers JSON and substitute all CLI placeholders.
+
+    Returns the parsed dict (with ``_comment`` left in place). This is the
+    single source of truth for placeholder substitution; both
+    ``_materialize_answers_file`` (which writes the rendered JSON for
+    `databricks bundle init`) and ``_bundle_dir_from_scaffold`` /
+    ``stage_bundle_init`` (which need to know what ``bundle_name`` will
+    be in advance) call through here so the three callsites can never
+    drift out of sync on the placeholder set.
+    """
     if not scenario.answers_file.is_file():
         raise SystemExit(f"Answer file not found: {scenario.answers_file}")
-    raw = scenario.answers_file.read_text()
-    rendered_text = raw.replace("{uc_catalog_name}", uc_catalog_name)
-    rendered = json.loads(rendered_text)
+    schemas = _resolve_demo_schemas(scenario, uc_schema)
+    rendered_text = (
+        scenario.answers_file.read_text()
+        .replace("{uc_catalog_name}", uc_catalog_name)
+        .replace("{sdp_meta_schema}", schemas["sdp_meta_schema"])
+        .replace("{bronze_target_schema}", schemas["bronze_target_schema"])
+        .replace("{silver_target_schema}", schemas["silver_target_schema"])
+    )
+    return json.loads(rendered_text)
+
+
+_BUNDLE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _resolve_bundle_name(default_name: str, *, suffix: Optional[str] = None,
+                         unique: bool = False) -> str:
+    """Apply optional CLI overrides to the scenario's default bundle name.
+
+    DAB dev mode is intentionally idempotent per ``bundle.name`` × user --
+    re-deploying with the same name OVERWRITES the previous deployment in
+    the workspace (so iterating doesn't litter the workspace with stale
+    jobs/pipelines). To force a NEW deployment, change ``bundle.name``:
+
+      - ``suffix``: appended as ``<default>_<suffix>`` (eg. ``v2`` -> ``..._v2``).
+      - ``unique``: append a UTC timestamp ``_YYYYMMDD_HHMMSS`` to guarantee
+        a fresh name on every run.
+
+    Both can be combined: ``<default>_<suffix>_<timestamp>``.
+
+    The resulting name is validated against DAB's bundle-name grammar
+    (lowercase ASCII letter followed by letters/digits/underscores) so we
+    fail fast with a helpful message instead of letting `databricks bundle
+    init` reject it later.
+    """
+    name = default_name
+    if suffix:
+        name = f"{name}_{suffix}"
+    if unique:
+        ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        name = f"{name}_{ts}"
+    if not _BUNDLE_NAME_PATTERN.match(name):
+        raise SystemExit(
+            f"Resolved bundle name {name!r} is not a valid DAB bundle name. "
+            "It must match ^[a-z][a-z0-9_]*$ (lowercase letter, then "
+            "letters/digits/underscores). Adjust --bundle-name-suffix to "
+            "use only [a-z0-9_]."
+        )
+    return name
+
+
+def _materialize_answers_file(scenario: Scenario, uc_catalog_name: str, dest_dir: Path,
+                              *, uc_schema: Optional[str] = None,
+                              bundle_name_override: Optional[str] = None) -> Path:
+    """Render the answers JSON for `databricks bundle init` and write it.
+
+    See ``_render_answers_dict`` for the placeholder set. The rendered
+    ``bundle_name`` is replaced when ``bundle_name_override`` is set.
+    Callers MUST resolve the final name once (eg. in ``stage_bundle_init``)
+    and pass the literal here so the bundle dir computed by
+    ``_bundle_dir_from_scaffold`` matches the value DAB actually receives
+    — otherwise a `--unique-bundle-name` timestamp would drift between
+    the two callsites.
+    """
+    rendered = _render_answers_dict(scenario, uc_catalog_name, uc_schema)
     rendered.pop("_comment", None)
+    if bundle_name_override:
+        rendered["bundle_name"] = bundle_name_override
     out = dest_dir / f"answers_{scenario.name}.json"
     out.write_text(json.dumps(rendered, indent=2))
     return out
@@ -296,14 +440,19 @@ def _seed_demo_landing(bundle_dir: Path) -> None:
     print(f"[STAGE 4 prep] Seeded landing tree at {landing} (copied real CSVs from demo/resources/data)")
 
 
-def _bundle_dir_from_scaffold(scenario: Scenario, out_dir: Path, uc_catalog_name: str) -> Path:
-    """Return the path the template renders into for a given scenario."""
-    if not scenario.answers_file.is_file():
-        raise SystemExit(f"Answer file not found: {scenario.answers_file}")
-    answers = json.loads(
-        scenario.answers_file.read_text().replace("{uc_catalog_name}", uc_catalog_name)
-    )
-    return out_dir / answers["bundle_name"]
+def _bundle_dir_from_scaffold(scenario: Scenario, out_dir: Path, uc_catalog_name: str,
+                              *, uc_schema: Optional[str] = None,
+                              bundle_name_override: Optional[str] = None) -> Path:
+    """Return the path the template renders into for a given scenario.
+
+    Uses the same `_render_answers_dict` substitution as
+    ``_materialize_answers_file`` so the directory we expect on disk
+    matches the value DAB actually receives. Callers MUST share a single
+    resolved ``bundle_name_override`` value with the matching
+    ``_materialize_answers_file`` call.
+    """
+    answers = _render_answers_dict(scenario, uc_catalog_name, uc_schema)
+    return out_dir / (bundle_name_override or answers["bundle_name"])
 
 
 def _run_recipe(scenario: Scenario, bundle_dir: Path, *, apply: bool,
@@ -356,7 +505,10 @@ def _print_onboarding_summary(bundle_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def stage_bundle_init(scenario: Scenario, out_dir: Path, uc_catalog_name: str,
-                      profile: Optional[str], *, clean: bool = True) -> Path:
+                      profile: Optional[str], *, clean: bool = True,
+                      uc_schema: Optional[str] = None,
+                      bundle_name_suffix: Optional[str] = None,
+                      unique_bundle_name: bool = False) -> Path:
     _banner("STAGE 1", f"databricks bundle init  (scenario={scenario.name})")
     if not shutil.which("databricks"):
         raise SystemExit(
@@ -364,11 +516,43 @@ def stage_bundle_init(scenario: Scenario, out_dir: Path, uc_catalog_name: str,
             "this demo: https://docs.databricks.com/dev-tools/cli/install.html"
         )
 
+    # Log which schema names the rendered bundle will use so the user can
+    # see at a glance whether --uc-schema is driving them or the
+    # per-scenario defaults are. Cheap and high-signal during multi-scenario runs.
+    schemas = _resolve_demo_schemas(scenario, uc_schema)
+    print(
+        f"[STAGE 1] Target schemas (catalog={uc_catalog_name}): "
+        f"sdp_meta={schemas['sdp_meta_schema']}, "
+        f"bronze={schemas['bronze_target_schema']}, "
+        f"silver={schemas['silver_target_schema']}"
+        + ("  [from --uc-schema]" if uc_schema else "  [scenario defaults]")
+    )
+
+    # Resolve bundle_name ONCE so the dir we compute below and the
+    # answers JSON we materialize next agree on the value (relevant when
+    # --unique-bundle-name is set, which would otherwise generate a
+    # different timestamp on each call).
+    bundle_name_override: Optional[str] = None
+    if bundle_name_suffix or unique_bundle_name:
+        json_default = _render_answers_dict(
+            scenario, uc_catalog_name, uc_schema,
+        )["bundle_name"]
+        bundle_name_override = _resolve_bundle_name(
+            json_default, suffix=bundle_name_suffix, unique=unique_bundle_name,
+        )
+        print(
+            f"[STAGE 1] Bundle name override: {json_default!r} -> {bundle_name_override!r}"
+            f"  (suffix={bundle_name_suffix!r}, unique={unique_bundle_name})"
+        )
+
     # `databricks bundle init` refuses to overwrite an existing scaffold, so
     # the demo is non-idempotent by default. Re-running after a previous
     # attempt would error with "one or more files already exist". Wipe the
     # target directory first unless --no-clean was passed.
-    bundle_dir = _bundle_dir_from_scaffold(scenario, out_dir, uc_catalog_name)
+    bundle_dir = _bundle_dir_from_scaffold(
+        scenario, out_dir, uc_catalog_name,
+        uc_schema=uc_schema, bundle_name_override=bundle_name_override,
+    )
     if bundle_dir.exists():
         if clean:
             print(f"[STAGE 1] Removing existing scaffold at {bundle_dir} (use --no-clean to keep)")
@@ -381,7 +565,10 @@ def stage_bundle_init(scenario: Scenario, out_dir: Path, uc_catalog_name: str,
 
     with tempfile.TemporaryDirectory(prefix="dab_demo_") as tmp:
         tmp = Path(tmp)
-        answers = _materialize_answers_file(scenario, uc_catalog_name, tmp)
+        answers = _materialize_answers_file(
+            scenario, uc_catalog_name, tmp,
+            uc_schema=uc_schema, bundle_name_override=bundle_name_override,
+        )
         rc = bundle_init(BundleInitCommand(
             output_dir=str(out_dir),
             config_file=str(answers),
@@ -391,8 +578,55 @@ def stage_bundle_init(scenario: Scenario, out_dir: Path, uc_catalog_name: str,
         raise SystemExit(f"bundle init failed with exit code {rc}")
     if not bundle_dir.is_dir():
         raise SystemExit(f"Expected scaffolded bundle at {bundle_dir}, but it does not exist.")
+
+    # DAB respects .gitignore from the nearest enclosing .git directory upward
+    # when deciding what to upload. The launcher scaffolds bundles under
+    # `demo_runs/`, which is .gitignored at the dlt-meta repo root -- so
+    # without our own git boundary, DAB sees EVERY file in the bundle as
+    # ignored, syncs zero files, and the pipeline fails at runtime with
+    # `NOTEBOOK_NOT_FOUND_EXCEPTION` because notebooks/init_sdp_meta_pipeline
+    # never reached the workspace. Initialize an empty git repo inside the
+    # bundle so DAB stops there and only honors the bundle's own .gitignore.
+    _ensure_bundle_git_boundary(bundle_dir)
+
     print(f"\n[STAGE 1] Bundle scaffolded at {bundle_dir}")
     return bundle_dir
+
+
+def _ensure_bundle_git_boundary(bundle_dir: Path) -> None:
+    """`git init` the bundle directory so DAB doesn't inherit a parent .gitignore.
+
+    No-op if `git` isn't on PATH or the directory is already a git repo
+    (idempotent + safe to re-run). Failure is logged and swallowed so a
+    missing `git` binary never blocks the demo.
+    """
+    if (bundle_dir / ".git").exists():
+        return
+    git = shutil.which("git")
+    if not git:
+        print(
+            "[STAGE 1] WARNING: `git` not on PATH; cannot create a git boundary "
+            "inside the bundle. If the bundle directory is .gitignored by an "
+            "ancestor repo, `databricks bundle deploy` will silently sync zero "
+            "files and pipelines will fail with NOTEBOOK_NOT_FOUND_EXCEPTION."
+        )
+        return
+    try:
+        subprocess.run(
+            [git, "init", "--quiet", str(bundle_dir)],
+            check=True, capture_output=True, text=True,
+        )
+        print(
+            f"[STAGE 1] Initialized empty git repo at {bundle_dir}/.git "
+            "so `databricks bundle deploy` doesn't inherit the parent repo's "
+            ".gitignore (which would exclude every bundle file)."
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        print(
+            f"[STAGE 1] WARNING: `git init` failed in {bundle_dir}: {exc}. "
+            "If your bundle directory is .gitignored by an ancestor repo, "
+            "`databricks bundle deploy` will silently sync zero files."
+        )
 
 
 # Datasets shipped under demo/resources/data/ that we re-use for the
@@ -941,12 +1175,35 @@ def stage_deploy_and_run(bundle_dir: Path, profile: Optional[str], *,
     if uc_catalog:
         _ensure_target_schemas(bundle_dir, uc_catalog, profile)
 
-    # 1) deploy.
+    # 1) deploy. Capture stderr so we can detect the silent
+    # "no files to sync" failure mode (caused by the bundle dir being
+    # ignored by an ancestor .gitignore) before pipelines fail with
+    # NOTEBOOK_NOT_FOUND_EXCEPTION at runtime.
     deploy_cmd = base + ["bundle", "deploy", "--target", "dev"]
     print("[STAGE 6] $ " + " ".join(deploy_cmd))
-    rc = subprocess.run(deploy_cmd, cwd=bundle_dir).returncode
-    if rc != 0:
-        raise SystemExit(f"command bundle deploy --target dev failed with code {rc}")
+    deploy_proc = subprocess.run(
+        deploy_cmd, cwd=bundle_dir,
+        stderr=subprocess.PIPE, text=True,
+    )
+    if deploy_proc.stderr:
+        sys.stderr.write(deploy_proc.stderr)
+    if deploy_proc.returncode != 0:
+        raise SystemExit(
+            f"command bundle deploy --target dev failed with code {deploy_proc.returncode}"
+        )
+    if "no files to sync" in (deploy_proc.stderr or "").lower():
+        raise SystemExit(
+            "[STAGE 6] FATAL: `databricks bundle deploy` reported "
+            "'no files to sync' -- the bundle directory is being filtered out "
+            "by an ancestor repo's .gitignore (DAB walks up to the nearest "
+            ".git directory and applies its .gitignore). The launcher normally "
+            "fixes this by `git init`-ing the bundle directory in STAGE 1; if "
+            "you see this error, that step likely failed (see earlier "
+            "[STAGE 1] WARNING). Re-run after either (a) installing `git`, or "
+            "(b) running `git init` manually inside "
+            f"{bundle_dir}, or (c) moving --out-dir outside any "
+            ".gitignored ancestor."
+        )
 
     # 2) (optional) stage conf/ to UC volume + build the override params.
     onboarding_extra: List[str] = []
@@ -979,7 +1236,100 @@ def stage_deploy_and_run(bundle_dir: Path, profile: Optional[str], *,
         print("[STAGE 6] $ " + " ".join(cmd))
         result = subprocess.run(cmd, cwd=bundle_dir)
         if result.returncode != 0:
+            # `databricks bundle run pipelines` only reports the job-level
+            # INTERNAL_ERROR; the actual Python/Spark traceback lives in the
+            # Spark Declarative Pipelines (SDP) event log. Fetch it so users
+            # don't have to chase the run URL by hand.
+            if sub[:3] == ["bundle", "run", "pipelines"]:
+                _dump_pipeline_failure_diagnostics(bundle_dir, profile)
             raise SystemExit(f"command {' '.join(sub)} failed with code {result.returncode}")
+
+
+def _dump_pipeline_failure_diagnostics(bundle_dir: Path,
+                                       profile: Optional[str]) -> None:
+    """Print ERROR-level events from each Spark Declarative Pipelines (SDP) pipeline in the bundle.
+
+    Called only when ``bundle run pipelines`` fails. Best-effort: any failure
+    inside this helper is logged and swallowed so we never mask the original
+    pipeline failure with a diagnostics-tool failure.
+    """
+    print("")
+    print("=" * 78)
+    print("[STAGE 6 diag] bundle run pipelines failed — fetching SDP event log")
+    print("=" * 78)
+    cli = shutil.which("databricks")
+    if not cli:
+        print("[STAGE 6 diag] databricks CLI not on PATH; skipping event-log fetch.")
+        return
+    base = [cli]
+    if profile:
+        base.extend(["--profile", profile])
+    summary_cmd = base + ["bundle", "summary", "--target", "dev", "--output", "json"]
+    try:
+        proc = subprocess.run(
+            summary_cmd, cwd=bundle_dir,
+            capture_output=True, text=True, check=False,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[STAGE 6 diag] could not run `bundle summary`: {exc}")
+        return
+    if proc.returncode != 0:
+        print(
+            f"[STAGE 6 diag] `bundle summary` exited {proc.returncode}; "
+            f"skipping event-log fetch.\nstderr: {proc.stderr.strip()[:500]}"
+        )
+        return
+    try:
+        summary = json.loads(proc.stdout)
+    except Exception as exc:
+        print(f"[STAGE 6 diag] could not parse `bundle summary` JSON: {exc}")
+        return
+    pipelines = ((summary.get("resources") or {}).get("pipelines") or {})
+    if not pipelines:
+        print("[STAGE 6 diag] no pipelines found in bundle summary.")
+        return
+    try:
+        from databricks.sdk import WorkspaceClient  # local import: optional dep
+    except Exception as exc:
+        print(f"[STAGE 6 diag] databricks-sdk not importable: {exc}")
+        return
+    try:
+        ws = WorkspaceClient(profile=profile) if profile else WorkspaceClient()
+    except Exception as exc:
+        print(f"[STAGE 6 diag] could not build WorkspaceClient: {exc}")
+        return
+    for pkey, pdef in sorted(pipelines.items()):
+        pid = pdef.get("id")
+        pname = pdef.get("name", pkey)
+        if not pid:
+            continue
+        print(f"\n[STAGE 6 diag] --- pipeline {pkey!r} (id={pid}, name={pname!r}) ---")
+        try:
+            events = list(ws.pipelines.list_pipeline_events(
+                pipeline_id=pid, max_results=100,
+            ))
+        except Exception as exc:
+            print(f"  [STAGE 6 diag] list_pipeline_events failed: {exc}")
+            continue
+        errors = [e for e in events if str(getattr(e, "level", "")).upper().endswith("ERROR")]
+        if not errors:
+            print("  [STAGE 6 diag] no ERROR-level events found in last 100 events.")
+            continue
+        # Newest first; show up to the 5 most recent error events.
+        for ev in errors[:5]:
+            ts = getattr(ev, "timestamp", "")
+            etype = getattr(ev, "event_type", "")
+            msg = getattr(ev, "message", "")
+            err_obj = getattr(ev, "error", None)
+            print(f"  [{ts}] {etype}: {msg}")
+            if err_obj is not None:
+                exceptions = getattr(err_obj, "exceptions", None) or []
+                for ex in exceptions[:3]:
+                    cls = getattr(ex, "class_name", "")
+                    text = getattr(ex, "message", "")
+                    print(f"    -> {cls}: {text}")
+        if len(errors) > 5:
+            print(f"  [STAGE 6 diag] ...and {len(errors) - 5} more ERROR event(s).")
 
 
 # ---------------------------------------------------------------------------
@@ -1011,7 +1361,16 @@ def main() -> int:
     parser.add_argument("--profile", default=None,
                         help="Databricks CLI profile (used for deploy + prepare-wheel)")
     parser.add_argument("--uc-schema", default=None,
-                        help="UC schema for prepare-wheel (only with --apply-prepare-wheel)")
+                        help="UC schema name. Drives BOTH (a) the wheel/demo-data UC volume "
+                             "schema used by --apply-prepare-wheel, AND (b) the rendered "
+                             "bundle's target schemas: sdp_meta_schema=<uc-schema>, "
+                             "bronze_target_schema=<uc-schema>_bronze, "
+                             "silver_target_schema=<uc-schema>_silver. "
+                             "When omitted, per-scenario defaults are used "
+                             "(e.g. sdp_meta_dab_demo_cf for the cloudfiles scenarios). "
+                             "WARNING: with --scenario all + --uc-schema, every scenario "
+                             "shares the same target schemas and bundle deploys will "
+                             "collide on dataflowspec / bronze / silver tables.")
     parser.add_argument("--uc-volume", default=None,
                         help="UC volume for prepare-wheel (only with --apply-prepare-wheel)")
     parser.add_argument("--apply-prepare-wheel", action="store_true",
@@ -1020,7 +1379,7 @@ def main() -> int:
     parser.add_argument("--pip-index-url", default=os.environ.get("PIP_INDEX_URL"),
                         help="Forwarded to `pip wheel` as --index-url. Use this "
                              "when pypi.org is not reachable from your network "
-                             "(e.g. https://pypi-proxy.dev.databricks.com/simple). "
+                             "(e.g. https://pypi.internal.example.com/simple). "
                              "Defaults to $PIP_INDEX_URL.")
     parser.add_argument("--pip-extra-index-url", action="append", default=None,
                         help="Forwarded to `pip wheel` as --extra-index-url. "
@@ -1037,6 +1396,19 @@ def main() -> int:
                              "STAGE 1 re-scaffolds. Default: clean (so re-runs are "
                              "idempotent).")
     parser.set_defaults(clean=True)
+    parser.add_argument("--bundle-name-suffix", default=None,
+                        help="Append this suffix to the rendered bundle name "
+                             "(eg. --bundle-name-suffix v2 -> "
+                             "dab_demo_cloudfiles_combined_v2). Use this to deploy "
+                             "side-by-side with an existing dev deployment instead "
+                             "of overwriting it. Must contain only [a-z0-9_].")
+    parser.add_argument("--unique-bundle-name", action="store_true",
+                        help="Append a UTC timestamp _YYYYMMDD_HHMMSS to the "
+                             "bundle name so EVERY run produces a fresh deployment "
+                             "(combine with --bundle-name-suffix if you also want a "
+                             "human-readable tag). Without this flag, DAB dev mode "
+                             "intentionally OVERWRITES the previous deployment with "
+                             "the same bundle.name × user (idempotent iteration).")
     parser.add_argument("--no-create-missing-uc", dest="create_missing_uc",
                         action="store_false",
                         help="Do NOT auto-create the UC schema / volume during "
@@ -1055,7 +1427,9 @@ def main() -> int:
         try:
             bundle_dir = stage_bundle_init(
                 scenario, out_dir, args.uc_catalog_name, args.profile,
-                clean=args.clean,
+                clean=args.clean, uc_schema=args.uc_schema,
+                bundle_name_suffix=args.bundle_name_suffix,
+                unique_bundle_name=args.unique_bundle_name,
             )
             extras = args.pip_extra_index_url
             if not extras and os.environ.get("PIP_EXTRA_INDEX_URL"):

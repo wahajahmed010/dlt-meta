@@ -494,7 +494,7 @@ The demo supports six scenarios via `--scenario`:
     ```
     Without `--apply-prepare-wheel` / `--apply-recipe` / `--apply-deploy` the demo runs in dry-run mode (no workspace access required) — useful for inspecting the rendered bundle locally before committing to a deploy. Bundles are written to `demo_runs/<scenario>/`.
 
-    > If your network can't reach `pypi.org`, add `--pip-index-url https://pypi-proxy.dev.databricks.com/simple` (or set `$PIP_INDEX_URL`) so `bundle-prepare-wheel` builds against the internal mirror.
+    > If your network can't reach `pypi.org`, add `--pip-index-url https://pypi.internal.example.com/simple` (or set `$PIP_INDEX_URL`) so `bundle-prepare-wheel` builds against your internal mirror.
 
 3. **Or run all scenarios sequentially:**
     ```commandline

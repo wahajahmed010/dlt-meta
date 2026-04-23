@@ -131,7 +131,7 @@ class BundlePrepareWheelCommand:
     uc_volume: str
     profile: Optional[str] = None
     # Forwarded to `pip wheel` as `--index-url`. Use this to point at a private
-    # pip mirror (e.g. https://pypi-proxy.dev.databricks.com/simple) when the
+    # pip mirror (e.g. https://pypi.internal.example.com/simple) when the
     # build host can't reach pypi.org. If unset, falls back to the PIP_INDEX_URL
     # environment variable; if that is also unset, pip uses its default index.
     pip_index_url: Optional[str] = None
@@ -1094,7 +1094,7 @@ def _load_bundle_prepare_wheel_config(wsi) -> BundlePrepareWheelCommand:
     uc_schema = wsi._question("UC schema for the wheel volume", default="sdp_meta_dataflowspecs")
     uc_volume = wsi._question("UC volume name", default="sdp_meta_wheels")
     # Defaults come from the standard pip env vars so users on networks that
-    # require an internal mirror (e.g. PIP_INDEX_URL=https://pypi-proxy.dev...)
+    # require an internal mirror (e.g. PIP_INDEX_URL=https://pypi.internal...)
     # don't have to type the URL again here.
     pip_index_url = wsi._question(
         "pip --index-url (blank to use default / $PIP_INDEX_URL)",
