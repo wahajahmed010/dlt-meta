@@ -7,6 +7,7 @@ import sys
 import uuid
 import webbrowser
 from dataclasses import dataclass
+from pathlib import Path
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service import jobs, pipelines, compute
 from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary
@@ -806,11 +807,111 @@ def deploy_ui(sdp_meta: SDPMeta, form_data):
     sdp_meta.deploy(cmd)
 
 
+# ---------------------------------------------------------------------------
+# DAB (Declarative Automation Bundle) command wrappers
+#
+# Mirror the onboard/deploy pattern: each wrapper takes the shared SDPMeta
+# instance, uses `sdp_meta._wsi` (a WorkspaceInstaller, set up in the SDPMeta
+# constructor) as the interactive prompter, and delegates to the matching
+# pure-function handler in `bundle.py`. The handlers themselves don't need
+# a WorkspaceClient -- they shell out to the `databricks` CLI -- but routing
+# them through SDPMeta keeps the dispatcher's signature uniform with the
+# legacy commands.
+#
+# These four entries MUST stay in lock-step with `labs.yml commands:` and
+# the `MAPPING` dict below. The `tests/test_cli.py::CliCommandWiringTests`
+# regression test enforces both.
+# ---------------------------------------------------------------------------
+
+
+def bundle_init(sdp_meta: SDPMeta, flags: dict = None):
+    """Scaffold a new sdp-meta DAB.
+
+    With ``--quickstart`` (declared in labs.yml), all 13 template prompts are
+    pre-answered with developer-friendly defaults via a generated
+    ``--config-file`` (see ``QUICKSTART_BUNDLE_INIT_DEFAULTS`` in bundle.py).
+    The user still has to fix ``sdp_meta_dependency`` afterwards, but the
+    happy path is ``bundle-init --quickstart`` -> edit one file ->
+    ``bundle-validate``. ``--output-dir`` is honored by both modes.
+    Without ``--quickstart``, falls back to the interactive prompts.
+    """
+    from databricks.labs.sdp_meta.bundle import (
+        BundleInitCommand,
+        _load_bundle_init_config,
+        bundle_init as _run,
+        write_quickstart_config_file,
+    )
+
+    flags = flags or {}
+    quickstart = bool(flags.get("quickstart"))
+    output_dir = flags.get("output-dir") or flags.get("output_dir") or "."
+
+    if quickstart:
+        logger.info(
+            "Scaffolding a new sdp-meta DAB in --quickstart mode "
+            "(no prompts; developer defaults)."
+        )
+        # Stash the generated config alongside the rendered bundle so users
+        # have a record of which defaults they got. tempfile would also work
+        # but leaving it next to the bundle aids debugging.
+        cfg_dir = Path(output_dir).resolve()
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        cfg_path = write_quickstart_config_file(cfg_dir)
+        cmd = BundleInitCommand(output_dir=output_dir, config_file=str(cfg_path))
+    else:
+        logger.info("Scaffolding a new sdp-meta DAB from the packaged template.")
+        cmd = _load_bundle_init_config(sdp_meta._wsi)
+        # CLI --output-dir wins over an interactive answer when both are given,
+        # since the user explicitly typed it on the command line.
+        if flags.get("output-dir") or flags.get("output_dir"):
+            cmd.output_dir = output_dir
+    _run(cmd)
+
+
+def bundle_prepare_wheel(sdp_meta: SDPMeta, flags: dict = None):
+    # `flags` is accepted for dispatcher uniformity (see main()) but unused.
+    del flags
+    logger.info("Building the sdp-meta wheel and uploading it to a UC volume.")
+    from databricks.labs.sdp_meta.bundle import (
+        _load_bundle_prepare_wheel_config,
+        bundle_prepare_wheel as _run,
+    )
+    _run(_load_bundle_prepare_wheel_config(sdp_meta._wsi))
+
+
+def bundle_validate(sdp_meta: SDPMeta, flags: dict = None):
+    del flags
+    logger.info("Validating the sdp-meta DAB (databricks bundle validate + sanity checks).")
+    from databricks.labs.sdp_meta.bundle import (
+        _load_bundle_validate_config,
+        bundle_validate as _run,
+    )
+    rc = _run(_load_bundle_validate_config(sdp_meta._wsi))
+    if rc != 0:
+        sys.exit(rc)
+
+
+def bundle_add_flow(sdp_meta: SDPMeta, flags: dict = None):
+    del flags
+    logger.info("Appending flow entries to the bundle's onboarding file.")
+    from databricks.labs.sdp_meta.bundle import (
+        _load_bundle_add_flow_config,
+        bundle_add_flow as _run,
+    )
+    rc = _run(_load_bundle_add_flow_config(sdp_meta._wsi))
+    if rc != 0:
+        sys.exit(rc)
+
+
 MAPPING = {
     "onboard": onboard,
     "deploy": deploy,
     "onboard_ui": onboard_ui,
     "deploy_ui": deploy_ui,
+    "bundle-init": bundle_init,
+    "bundle-prepare-wheel": bundle_prepare_wheel,
+    "bundle-validate": bundle_validate,
+    "bundle-add-flow": bundle_add_flow,
 }
 
 
@@ -836,6 +937,12 @@ def main(raw):
     sdp_meta = SDPMeta(ws)
     if command in ["onboard_ui", "deploy_ui"]:
         MAPPING[command](sdp_meta, payload)
+    elif command.startswith("bundle-"):
+        # Bundle wrappers receive `flags` so they can opt into non-interactive
+        # behavior (e.g. `bundle-init --quickstart`). Wrappers that ignore
+        # flags accept them as a `flags=None` keyword arg, which keeps the
+        # wrapper callable in tests without constructing a fake payload.
+        MAPPING[command](sdp_meta, flags=flags)
     else:
         MAPPING[command](sdp_meta)
 

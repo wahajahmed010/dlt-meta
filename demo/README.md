@@ -7,7 +7,7 @@
  6. [Silver Fanout Demo](#silver-fanout-demo): This demo showcases the implementation of fanout architecture in the silver layer.
  7. [Apply Changes From Snapshot Demo](#apply-changes-from-snapshot-demo): This demo showcases the implementation of ingesting from snapshots in bronze layer
  8. [Lakeflow Declarative Pipelines Sink Demo](#lakeflow-declarative-pipelines-sink-demo): This demo showcases the implementation of write to external sinks like delta and kafka
- 9. [DAB Demo](#dab-demo): This demo showcases how to use Databricks Assets Bundles with sdp-meta
+ 9. [DAB Demo](#dab-demo): End-to-end walkthrough of the `databricks labs sdp-meta bundle-*` CLI — scaffold a Declarative Automation Bundle, append flows, validate, deploy, and run onboarding + Lakeflow Declarative Pipelines from one driver script. See [`DAB_README.md`](../DAB_README.md) for the full CLI / template / recipe reference.
 
 
 # Interactive Demo (Notebook)
@@ -438,81 +438,89 @@ This demo will perform following tasks:
 # DAB Demo
 
 ## Overview
-This demo showcases how to use Databricks Asset Bundles (DABs) with SDP-Meta:
-This demo will perform following steps:
-- Create sdp-meta schema's for dataflowspec and bronze/silver layer
-- Upload nccessary resources to unity catalog volume
-- Create DAB files with catalog, schema, file locations populated
-- Deploy DAB to databricks workspace
-- Run onboarding usind DAB commands
-- Run Bronze/Silver Pipelines using DAB commands
-- Demo examples will showcase fan-out pattern in silver layer
-- Demo example will show case custom transfomations for bronze/silver layers
-- Adding custom columns and metadata to Bronze tables
-- Implementing SCD Type 1 to Silver tables
-- Applying expectations to filter data in Silver tables
 
-### Steps:
-1. Launch Command Prompt
+End-to-end demo for the new `databricks labs sdp-meta bundle-*` CLI commands. One driver script (`demo/launch_dab_template_demo.py`) exercises every stage of the bundle lifecycle against a UC catalog you own:
 
-2. Install [Databricks CLI](https://docs.databricks.com/dev-tools/cli/index.html)
+| Stage | Command | What it does |
+| --- | --- | --- |
+| 1 | `databricks labs sdp-meta bundle-init` | Scaffold a fresh bundle from the packaged template (onboarding job + Lakeflow Declarative Pipelines + `variables.yml` + recipes). |
+| 2 | `databricks labs sdp-meta bundle-prepare-wheel` | Build the local sdp-meta wheel and upload it to a UC volume. The resulting `/Volumes/...` path is auto-pinned into `resources/variables.yml` as `sdp_meta_dependency`. |
+| 3 | `databricks labs sdp-meta bundle-add-flow` | Bulk-append flow entries from a CSV (the demo supplies one per scenario under `demo/dab_template_demo/flows/`). |
+| 4 | `python recipes/from_*.py` | Run the rendered recipe (one of `from_uc.py`, `from_volume.py`, `from_topics.py`, `from_inventory.py`) to programmatically generate flows from real workspace state. |
+| 5 | `databricks labs sdp-meta bundle-validate` | Run `databricks bundle validate` plus sdp-meta-specific sanity checks (layer/topology consistency, `wheel_source` vs `sdp_meta_dependency`, unedited `<your-...>` placeholders, dangling `dataflow_group` references). |
+| 6 | `databricks bundle deploy` + `bundle run onboarding` + `bundle run pipelines` | Deploy to the workspace, write the `bronze_dataflowspec` / `silver_dataflowspec` rows, and run the LDP pipelines end-to-end. |
 
-3. Install Python package requirements:
-   ```commandline
-   pip install "PyYAML>=6.0" setuptools databricks-sdk
-   pip install delta-spark==3.0.0 pyspark==3.5.5
-   ```
+> For the full CLI reference (every prompt, every variable, every recipe, the full flag surface, and how to extend the runner notebook for snapshot / CDC / custom transforms), see [`DAB_README.md`](../DAB_README.md) at the repo root. This demo section is the *runnable* walkthrough; `DAB_README.md` is the *reference*.
 
-4. ```commandline
-    git clone https://github.com/databrickslabs/sdp-meta.git 
-    ```
+The demo supports six scenarios via `--scenario`:
 
-5. ```commandline
-    cd sdp-meta
-    ```
-6. Set python environment variable into terminal
+| Scenario | Source | Pipeline mode |
+| --- | --- | --- |
+| `cloudfiles` | UC volume CSVs (Customers / Transactions / Products / Stores) | `split` (separate bronze + silver LDP pipelines) |
+| `cloudfiles_combined` | Same data, same recipe | `combined` (bronze + silver in **one** LDP pipeline) |
+| `kafka` | Kafka topic list at `demo/dab_template_demo/topics/kafka_topics.txt` | `split` |
+| `eventhub` | Event Hub namespace + topic list | `split` |
+| `delta` | Existing UC delta tables | `split` |
+| `all` | Runs all of the above sequentially into separate `demo_runs/<scenario>/` dirs | varies |
+
+### Prerequisites
+
+- A Databricks workspace with Unity Catalog enabled, and `CREATE SCHEMA` + `CREATE VOLUME` on the target catalog.
+- [`databricks` CLI](https://docs.databricks.com/dev-tools/cli/index.html) installed and a profile configured (`databricks auth login --profile <name>`).
+- Python 3.10+ with `pip install "PyYAML>=6.0" setuptools databricks-sdk wheel`.
+
+> No PySpark or Delta Spark install is needed — STAGES 1-5 are pure Python and shell out to the `databricks` CLI; STAGE 6 runs the actual workload on Databricks compute.
+
+### Steps
+
+1. **Clone and enter the repo**
     ```commandline
-    sdp_meta_home=$(pwd)
-    ```
-    ```commandline
-    export PYTHONPATH=$sdp_meta_home
-    ```
-
-6. Generate DAB resources and set up schemas:
-    This command will:
-    - Generate DAB configuration files
-    - Create SDP-Meta schemas
-    - Upload necessary files to volumes
-    ```commandline
-        python demo/generate_dabs_resources.py --source=cloudfiles --uc_catalog_name=<your_catalog_name> --profile=<your_profile>
-    ```
-    > Note: If you don't specify `--profile`, you'll be prompted for your Databricks workspace URL and access token.
-
-7. Deploy and run the DAB bundle:
-    - Navigate to the DAB directory
-    ```commandline
-        cd demo/dabs
+    git clone https://github.com/databrickslabs/dlt-meta.git
+    cd dlt-meta
+    export PYTHONPATH=$(pwd)
     ```
 
-    - Validate the bundle configuration
+2. **Run the full bundle lifecycle for one scenario** (CloudFiles is the fastest end-to-end path because the demo seeds the UC volume with CSV fixtures for you):
     ```commandline
-        databricks bundle validate --profile=<your_profile>
+    python demo/launch_dab_template_demo.py \
+        --scenario cloudfiles \
+        --uc-catalog-name <your_catalog_name> \
+        --uc-schema   sdp_meta_dab_demo_cf \
+        --uc-volume   sdp_meta_wheels \
+        --apply-prepare-wheel \
+        --apply-recipe \
+        --apply-deploy \
+        --profile <your_profile>
+    ```
+    Without `--apply-prepare-wheel` / `--apply-recipe` / `--apply-deploy` the demo runs in dry-run mode (no workspace access required) — useful for inspecting the rendered bundle locally before committing to a deploy. Bundles are written to `demo_runs/<scenario>/`.
+
+    > If your network can't reach `pypi.org`, add `--pip-index-url https://pypi.internal.example.com/simple` (or set `$PIP_INDEX_URL`) so `bundle-prepare-wheel` builds against your internal mirror.
+
+3. **Or run all scenarios sequentially:**
+    ```commandline
+    python demo/launch_dab_template_demo.py \
+        --scenario all \
+        --uc-catalog-name <your_catalog_name> \
+        --apply-prepare-wheel --apply-recipe --apply-deploy \
+        --profile <your_profile>
     ```
 
-    - Deploy the bundle to dev environment
+4. **Combined-pipeline variant** (bronze + silver in a single LDP pipeline rather than two):
     ```commandline
-        databricks bundle deploy --target dev --profile=<your_profile>
+    python demo/launch_dab_template_demo.py \
+        --scenario cloudfiles_combined \
+        --uc-catalog-name <your_catalog_name> \
+        --uc-schema sdp_meta_dab_demo_cf_combined \
+        --uc-volume sdp_meta_wheels \
+        --apply-prepare-wheel --apply-recipe --apply-deploy \
+        --profile <your_profile>
     ```
 
-    - Run the onboarding job
+5. **Inspect the scaffolded bundle.** After the demo finishes, the rendered bundle lives at `demo_runs/<scenario>/<bundle_name>/`. Open `databricks.yml`, `resources/variables.yml`, `conf/onboarding.yml`, and `notebooks/init_sdp_meta_pipeline.py` to see what got generated. To re-run just the deploy/run portion against an edited bundle, use the standard CLI:
     ```commandline
-        databricks bundle run onboard_people -t dev --profile=<your_profile>
+    cd demo_runs/cloudfiles/<bundle_name>
+    databricks labs sdp-meta bundle-validate
+    databricks bundle deploy   --target dev --profile <your_profile>
+    databricks bundle run onboarding --target dev --profile <your_profile>
+    databricks bundle run pipelines  --target dev --profile <your_profile>
     ```
-
-    - Execute the pipelines
-    ```commandline
-        databricks bundle run execute_pipelines_people -t dev --profile=<your_profile>
-    ```
-
-    ![dab_onboarding_job.png](../docs/static/images/dab_onboarding_job.png)
-    ![dab_dlt_pipelines.png](../docs/static/images/dab_dlt_pipelines.png)

@@ -257,7 +257,7 @@ And update your pipeline configuration to pass the key as `sdp_meta_whl`:
 
 Note: `%pip install dlt-meta` still works during the transition period (it installs `databricks-labs-sdp-meta` as a dependency), but we recommend updating to the new name.
 
-### Scenario 7: Databricks Asset Bundles (DAB)
+### Scenario 7: Declarative Automation Bundles (DAB)
 
 Update your DAB job YAML:
 
