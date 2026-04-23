@@ -105,9 +105,20 @@ from databricks.labs.sdp_meta.bundle import (  # noqa: E402
 class Scenario:
     name: str
     answers_file: Path
-    extra_flows_csv: Path
+    # Optional: if None, STAGE 3 (`bundle-add-flow --from-csv`) is skipped.
+    # Used by the `delta` scenario where STAGE 4's `from_uc.py` recipe
+    # already mirrors the same source tables; adding them again via CSV
+    # would produce duplicate onboarding rows + a `Cannot redefine
+    # dataset ..._inputview` error at pipeline runtime.
+    extra_flows_csv: Optional[Path]
     recipe_name: str
-    recipe_args_template: List[str]  # supports {bundle_dir} and {uc_catalog_name} substitution
+    recipe_args_template: List[str]
+    # ``recipe_args_template`` supports the following placeholders, expanded
+    # by ``_run_recipe`` at invocation time:
+    #   {bundle_dir}         -> absolute path of the scaffolded bundle
+    #   {uc_catalog_name}    -> --uc-catalog-name
+    #   {uc_source_catalog}  -> --uc-source-catalog (defaults to {uc_catalog_name})
+    #   {uc_source_schema}   -> --uc-source-schema  (defaults to "staging")
     description: str
     # Per-scenario default UC schema names used when --uc-schema is NOT
     # passed on the CLI. When --uc-schema IS passed, all three are derived
@@ -208,15 +219,20 @@ SCENARIOS = {
     "delta": Scenario(
         name="delta",
         answers_file=DEMO_DIR / "answers" / "delta_split.json",
-        extra_flows_csv=DEMO_DIR / "flows" / "delta_extra.csv",
+        # No extra_flows_csv: STAGE 4's `from_uc.py` already mirrors every
+        # table under the source schema. Registering them again via CSV
+        # would create duplicate onboarding rows -> duplicate dataflow
+        # specs -> `Cannot redefine dataset ..._inputview` at pipeline run.
+        extra_flows_csv=None,
         recipe_name="from_uc.py",
         # from_uc.py mirrors every Delta table under <catalog>.<schema> into
-        # the bundle's onboarding file. We point at a `staging` schema by
-        # convention; override with --uc-source-schema if yours is named
-        # differently. Only runs with --apply-recipe (needs a workspace).
+        # the bundle's onboarding file. The source catalog/schema default to
+        # {uc_catalog_name}/staging respectively; override with
+        # --uc-source-catalog / --uc-source-schema if your upstream tables
+        # live elsewhere. Only runs with --apply-recipe (needs a workspace).
         recipe_args_template=[
-            "--source-catalog", "{uc_catalog_name}",
-            "--source-schema", "staging",
+            "--source-catalog", "{uc_source_catalog}",
+            "--source-schema", "{uc_source_schema}",
             "--bundle-dir", "{bundle_dir}",
         ],
         description=(
@@ -237,6 +253,11 @@ SCENARIOS = {
 # substitution all gate on this set so adding a new cloudFiles topology
 # (eg. `cloudfiles_combined`) only requires registering the scenario above.
 _CLOUDFILES_SCENARIO_NAMES = {"cloudfiles", "cloudfiles_combined"}
+
+# Scenarios whose recipe (`from_uc.py`) requires upstream Delta tables in a
+# UC schema. The launcher auto-seeds those tables before STAGE 4 when
+# --apply-recipe is set (see `_seed_demo_delta_source`).
+_DELTA_SCENARIO_NAMES = {"delta"}
 
 
 # ---------------------------------------------------------------------------
@@ -366,19 +387,35 @@ def _materialize_answers_file(scenario: Scenario, uc_catalog_name: str, dest_dir
 
 
 def _materialize_csv(scenario: Scenario, uc_catalog_name: str, dest_dir: Path,
-                     *, demo_data_volume_path: Optional[str] = None) -> Path:
+                     *, demo_data_volume_path: Optional[str] = None,
+                     uc_source_catalog: Optional[str] = None,
+                     uc_source_schema: Optional[str] = None) -> Path:
     """Substitute placeholders in the flow CSV.
 
     Recognized placeholders:
       - ``{uc_catalog_name}`` -> ``--uc-catalog-name``.
+      - ``{uc_source_catalog}`` -> ``--uc-source-catalog`` (defaults to
+        ``--uc-catalog-name``). Used by the delta scenario to point flows
+        at the upstream Delta tables' catalog.
+      - ``{uc_source_schema}`` -> ``--uc-source-schema`` (defaults to
+        ``staging``). Used by the delta scenario for the upstream schema
+        AND for the per-row ``source_system`` tag so the resulting flows
+        are self-describing.
       - ``{demo_data_volume_path}`` -> the UC-volume base path where this
         launcher uploaded the seed datasets (cloudfiles scenario only). When
         not provided (offline / no --apply-prepare-wheel), we fall back to a
         clearly fake placeholder under the same volume name so users can see
         the intended shape without the run blowing up.
     """
+    effective_source_catalog = uc_source_catalog or uc_catalog_name
+    effective_source_schema = uc_source_schema or "staging"
     raw = scenario.extra_flows_csv.read_text()
-    rendered = raw.replace("{uc_catalog_name}", uc_catalog_name)
+    rendered = (
+        raw
+        .replace("{uc_catalog_name}", uc_catalog_name)
+        .replace("{uc_source_catalog}", effective_source_catalog)
+        .replace("{uc_source_schema}", effective_source_schema)
+    )
     if "{demo_data_volume_path}" in rendered:
         if demo_data_volume_path:
             rendered = rendered.replace("{demo_data_volume_path}", demo_data_volume_path)
@@ -413,6 +450,226 @@ _DEMO_LANDING_SEEDS = {
     "orders_streaming": REPO_ROOT / "demo" / "resources" / "data" / "transactions",
     "events_streaming": REPO_ROOT / "demo" / "resources" / "data" / "products",
 }
+
+
+# Tables seeded into the delta scenario's source schema by
+# `_seed_demo_delta_source`. Each (key, value) pair becomes:
+#   1. CSVs under <value>/*.csv get uploaded to
+#      <demo_data_volume_path>/source_delta/<key>/
+#   2. The `seed_delta_source` notebook (run as a one-time serverless
+#      job) reads <volume>/source_delta/<key>/ and writes
+#      <uc_source_catalog>.<uc_source_schema>.<key> as a Delta table.
+# The keys MUST match the tables referenced in
+# `demo/dab_template_demo/flows/delta_extra.csv` -- otherwise STAGE 3's
+# onboarding entries would point at tables that don't exist when the
+# deployed pipeline runs at STAGE 6.
+_DELTA_SOURCE_SEEDS: Dict[str, Path] = {
+    "customers": REPO_ROOT / "demo" / "resources" / "data" / "customers",
+    "transactions": REPO_ROOT / "demo" / "resources" / "data" / "transactions",
+    "stores": REPO_ROOT / "demo" / "resources" / "data" / "stores",
+    "products": REPO_ROOT / "demo" / "resources" / "data" / "products",
+}
+
+
+# Path of the seed notebook source on disk (uploaded to the workspace by
+# `_seed_demo_delta_source`). Kept as a module-level constant so the test
+# suite can pin its location.
+_DELTA_SEED_NOTEBOOK_SRC: Path = (
+    DEMO_DIR / "seed" / "seed_delta_source.py"
+)
+
+
+def _upload_delta_source_csvs_to_volume(ws, demo_data_volume_path: str) -> str:
+    """Upload the delta scenario's seed CSVs into the wheel UC volume.
+
+    Returns the base path (``<demo_data_volume_path>/source_delta``) the
+    seed notebook reads from. We nest under a `source_delta/` prefix so the
+    upload doesn't collide with the cloudfiles scenarios' uploads when
+    both scenarios share the same volume.
+    """
+    base = f"{demo_data_volume_path.rstrip('/')}/source_delta"
+    print(f"[STAGE 4 prep] Uploading delta seed CSVs into {base}/ ...")
+    for table, src_dir in _DELTA_SOURCE_SEEDS.items():
+        if not src_dir.is_dir():
+            print(f"          - SKIP {table}: source dir {src_dir} missing")
+            continue
+        files = sorted(p for p in src_dir.iterdir() if p.is_file() and p.suffix == ".csv")
+        if not files:
+            print(f"          - SKIP {table}: no CSVs under {src_dir}")
+            continue
+        for src_file in files:
+            dst = f"{base}/{table}/{src_file.name}"
+            with src_file.open("rb") as fh:
+                ws.files.upload(file_path=dst, contents=fh, overwrite=True)
+            print(f"          - {src_file.name} -> {dst}")
+    return base
+
+
+def _upload_delta_seed_notebook(ws) -> str:
+    """Upload the seed notebook to the caller's workspace home.
+
+    Returns the absolute workspace path of the uploaded notebook so
+    ``jobs.submit`` can reference it. We upload as ``format=SOURCE`` /
+    ``language=PYTHON``; the file already starts with the
+    ``# Databricks notebook source`` magic header so the workspace renders
+    it as a notebook rather than a plain .py file.
+    """
+    from databricks.sdk.service.workspace import ImportFormat, Language
+
+    if not _DELTA_SEED_NOTEBOOK_SRC.is_file():
+        raise SystemExit(
+            f"Seed notebook source not found at {_DELTA_SEED_NOTEBOOK_SRC}. "
+            "Did you delete demo/dab_template_demo/seed/seed_delta_source.py?"
+        )
+    me = ws.current_user.me().user_name
+    target_dir = f"/Users/{me}/.dlt_meta_demo"
+    ws.workspace.mkdirs(target_dir)
+    target = f"{target_dir}/seed_delta_source"
+    print(f"[STAGE 4 prep] Uploading seed notebook to {target}")
+    ws.workspace.upload(
+        path=target,
+        content=_DELTA_SEED_NOTEBOOK_SRC.read_bytes(),
+        format=ImportFormat.SOURCE,
+        language=Language.PYTHON,
+        overwrite=True,
+    )
+    return target
+
+
+def _run_delta_seed_notebook(ws, *, notebook_path: str, source_catalog: str,
+                             source_schema: str, input_volume_path: str,
+                             tables: List[str]) -> None:
+    """Submit + block on a one-time job that runs the seed notebook.
+
+    Uses serverless compute (``environment_key`` + ``JobEnvironment`` with
+    ``client="2"``) so the demo doesn't require the user to plumb a
+    cluster id in. Surfaces the notebook's ``dbutils.notebook.exit(...)``
+    JSON payload (the per-table row counts) when the run succeeds; on
+    failure, surfaces ``run_page_url`` and the error so the user can jump
+    straight to the workspace UI.
+    """
+    from databricks.sdk.service import jobs
+    from databricks.sdk.service.compute import Environment
+
+    print("[STAGE 4 prep] Submitting one-time seed job (serverless) ...")
+    waiter = ws.jobs.submit(
+        run_name=f"dlt-meta-demo-seed-delta-source-{source_schema}",
+        tasks=[
+            jobs.SubmitTask(
+                task_key="seed_delta_source",
+                notebook_task=jobs.NotebookTask(
+                    notebook_path=notebook_path,
+                    base_parameters={
+                        "source_catalog": source_catalog,
+                        "source_schema": source_schema,
+                        "input_volume_path": input_volume_path,
+                        "tables": ",".join(tables),
+                    },
+                ),
+                environment_key="default",
+            )
+        ],
+        environments=[
+            jobs.JobEnvironment(
+                environment_key="default",
+                spec=Environment(client="2"),
+            )
+        ],
+    )
+    run = waiter.result()
+    state = run.state
+    if state and state.result_state and state.result_state.value == "SUCCESS":
+        out = ws.jobs.get_run_output(run_id=run.tasks[0].run_id) if run.tasks else None
+        notebook_output = (out.notebook_output.result if out and out.notebook_output else None)
+        print(f"[STAGE 4 prep] Seed job SUCCESS. Run page: {run.run_page_url}")
+        if notebook_output:
+            print(f"[STAGE 4 prep] Seed notebook output: {notebook_output}")
+        return
+    raise SystemExit(
+        f"Seed notebook job FAILED ({state.result_state if state else '?'}: "
+        f"{state.state_message if state else ''}). "
+        f"Inspect logs at {run.run_page_url}"
+    )
+
+
+def _seed_demo_delta_source(*, profile: Optional[str], uc_catalog: str,
+                            uc_schema: str, create_if_missing: bool,
+                            demo_data_volume_path: Optional[str]) -> None:
+    """Create + populate the delta scenario's source schema in UC.
+
+    The ``delta`` scenario's recipe (`recipes/from_uc.py`) lists tables in
+    ``<uc_catalog>.<uc_schema>`` via the Workspace API, and the flows added
+    in STAGE 3 from ``delta_extra.csv`` reference the same schema. This
+    helper makes the demo end-to-end runnable by:
+
+    1. Ensuring ``<uc_catalog>.<uc_schema>`` exists (auto-create gated by
+       ``--create-missing-uc``, mirroring the wheel-volume + target-schema
+       behaviour elsewhere in the launcher).
+    2. Uploading the three ``_DELTA_SOURCE_SEEDS`` CSV datasets shipped
+       under ``demo/resources/data/`` into the wheel UC volume (under a
+       ``source_delta/`` subdir so it doesn't collide with cloudfiles
+       uploads).
+    3. Uploading the seed notebook (``demo/dab_template_demo/seed/
+       seed_delta_source.py``) to the caller's workspace home.
+    4. Submitting a one-time serverless job that runs the seed notebook,
+       which in turn writes one Delta table per CSV subdir into the source
+       schema.
+
+    Step 2/3/4 require ``demo_data_volume_path`` (the wheel volume) — i.e.
+    ``--apply-prepare-wheel`` must have been set. We check for that early
+    and surface a clear error otherwise.
+    """
+    from databricks.sdk import WorkspaceClient
+    from databricks.sdk.errors import AlreadyExists, ResourceAlreadyExists
+
+    if not demo_data_volume_path:
+        raise SystemExit(
+            "The `delta` scenario seeds upstream tables by uploading CSVs to "
+            "the wheel UC volume, which requires --apply-prepare-wheel "
+            "(plus --uc-schema and --uc-volume) to have been set in STAGE 2. "
+            "Re-run with those flags, or pre-create the source tables "
+            f"under {uc_catalog}.{uc_schema} and pass an existing "
+            "--uc-source-catalog/--uc-source-schema instead."
+        )
+
+    ws = WorkspaceClient(profile=profile) if profile else WorkspaceClient()
+    schema_fqn = f"{uc_catalog}.{uc_schema}"
+
+    print(f"[STAGE 4 prep] Ensuring source schema exists: {schema_fqn}")
+    try:
+        ws.catalogs.get(uc_catalog)
+    except Exception as e:
+        raise SystemExit(
+            f"Catalog '{uc_catalog}' is not accessible: {e}. "
+            "Catalogs are never auto-created; create it first or pass "
+            "--uc-source-catalog pointing at a catalog you can use."
+        )
+    try:
+        ws.schemas.get(schema_fqn)
+        print(f"          - {schema_fqn} (exists)")
+    except Exception:
+        if not create_if_missing:
+            raise SystemExit(
+                f"Source schema '{schema_fqn}' does not exist and "
+                "--no-create-missing-uc was passed. Either create it manually "
+                "or drop the flag so the launcher can auto-create it."
+            )
+        try:
+            ws.schemas.create(name=uc_schema, catalog_name=uc_catalog)
+            print(f"          - {schema_fqn} (created)")
+        except (AlreadyExists, ResourceAlreadyExists):  # pragma: no cover
+            print(f"          - {schema_fqn} (raced; ok)")
+
+    input_volume_base = _upload_delta_source_csvs_to_volume(ws, demo_data_volume_path)
+    notebook_path = _upload_delta_seed_notebook(ws)
+    _run_delta_seed_notebook(
+        ws,
+        notebook_path=notebook_path,
+        source_catalog=uc_catalog,
+        source_schema=uc_schema,
+        input_volume_path=input_volume_base,
+        tables=list(_DELTA_SOURCE_SEEDS.keys()),
+    )
 
 
 def _seed_demo_landing(bundle_dir: Path) -> None:
@@ -456,17 +713,33 @@ def _bundle_dir_from_scaffold(scenario: Scenario, out_dir: Path, uc_catalog_name
 
 
 def _run_recipe(scenario: Scenario, bundle_dir: Path, *, apply: bool,
-                uc_catalog_name: str, profile: Optional[str]) -> int:
+                uc_catalog_name: str, profile: Optional[str],
+                uc_source_catalog: Optional[str] = None,
+                uc_source_schema: Optional[str] = None) -> int:
     """Invoke the rendered Python recipe inside the bundle as a subprocess."""
     recipe = bundle_dir / "recipes" / scenario.recipe_name
     if not recipe.is_file():
         print(f"[STAGE 4] WARNING: recipe {recipe} not found; skipping.")
         return 0
 
-    args = [
-        a.replace("{bundle_dir}", str(bundle_dir)).replace("{uc_catalog_name}", uc_catalog_name)
-        for a in scenario.recipe_args_template
-    ]
+    # ``uc_source_catalog``/``uc_source_schema`` only apply to the ``delta``
+    # scenario today (recipes/from_uc.py). Default the catalog to
+    # ``--uc-catalog-name`` so the common single-catalog case Just Works,
+    # and the schema to ``staging`` to preserve historical behaviour.
+    effective_source_catalog = uc_source_catalog or uc_catalog_name
+    effective_source_schema = uc_source_schema or "staging"
+
+    substitutions = {
+        "{bundle_dir}": str(bundle_dir),
+        "{uc_catalog_name}": uc_catalog_name,
+        "{uc_source_catalog}": effective_source_catalog,
+        "{uc_source_schema}": effective_source_schema,
+    }
+    args = []
+    for a in scenario.recipe_args_template:
+        for placeholder, value in substitutions.items():
+            a = a.replace(placeholder, value)
+        args.append(a)
     if apply:
         args.append("--apply")
     if profile and "--profile" not in args:
@@ -589,8 +862,43 @@ def stage_bundle_init(scenario: Scenario, out_dir: Path, uc_catalog_name: str,
     # bundle so DAB stops there and only honors the bundle's own .gitignore.
     _ensure_bundle_git_boundary(bundle_dir)
 
+    # The DAB template seeds a placeholder `data_flow_id: "100"` /
+    # `example_table` onboarding entry pointing at `<catalog>.landing.example_table`.
+    # For the `delta` scenario that table doesn't exist (and the launcher
+    # never seeds it), so leaving it in produces an extra dataflow spec
+    # that fails at pipeline runtime with `TABLE_OR_VIEW_NOT_FOUND`.
+    # Strip it so STAGE 4's `from_uc.py` (which mirrors the real source
+    # schema) is the only thing populating onboarding.yml.
+    if scenario.name in _DELTA_SCENARIO_NAMES:
+        _strip_example_onboarding_entry(bundle_dir)
+
     print(f"\n[STAGE 1] Bundle scaffolded at {bundle_dir}")
     return bundle_dir
+
+
+def _strip_example_onboarding_entry(bundle_dir: Path) -> None:
+    """Remove the scaffolded `data_flow_id: "100"` placeholder from conf/onboarding.{yml,json}.
+
+    The DAB template ships a single example flow as a teaching aid; this
+    helper drops it so scenarios whose subsequent stages populate the
+    file from real sources end up with exactly the rows those stages
+    added (no `example_table` ghost row pointing at non-existent
+    upstream data).
+    """
+    yml = bundle_dir / "conf" / "onboarding.yml"
+    js = bundle_dir / "conf" / "onboarding.json"
+    if yml.is_file():
+        rows = yaml.safe_load(yml.read_text()) or []
+        kept = [r for r in rows if str(r.get("data_flow_id", "")) != "100"]
+        yml.write_text(yaml.safe_dump(kept, sort_keys=False))
+        print(f"[STAGE 1] Stripped placeholder data_flow_id=100 from {yml.name} "
+              f"({len(rows)} -> {len(kept)} entries)")
+    elif js.is_file():
+        rows = json.loads(js.read_text())
+        kept = [r for r in rows if str(r.get("data_flow_id", "")) != "100"]
+        js.write_text(json.dumps(kept, indent=2))
+        print(f"[STAGE 1] Stripped placeholder data_flow_id=100 from {js.name} "
+              f"({len(rows)} -> {len(kept)} entries)")
 
 
 def _ensure_bundle_git_boundary(bundle_dir: Path) -> None:
@@ -714,16 +1022,35 @@ def stage_prepare_wheel(scenario: Scenario, bundle_dir: Path, *,
     # the rendered LDP topology differs.
     if scenario.name in _CLOUDFILES_SCENARIO_NAMES:
         return _upload_cloudfiles_demo_data(uc_catalog_name, uc_schema, uc_volume, profile)
+    # For the delta scenario, return the wheel-volume base so STAGE 4 can
+    # upload its seed CSVs under <base>/source_delta/<table>/ via
+    # `_seed_demo_delta_source`. We don't pre-upload here (unlike
+    # cloudfiles) because the delta seeder also has to launch a notebook
+    # job that consumes the uploaded files; keeping the upload + the job
+    # submission together in one helper is easier to reason about.
+    if scenario.name in _DELTA_SCENARIO_NAMES:
+        return f"/Volumes/{uc_catalog_name}/{uc_schema}/{uc_volume}"
     return None
 
 
 def stage_add_flow(scenario: Scenario, bundle_dir: Path, uc_catalog_name: str,
-                   demo_data_volume_path: Optional[str] = None) -> None:
+                   demo_data_volume_path: Optional[str] = None,
+                   uc_source_catalog: Optional[str] = None,
+                   uc_source_schema: Optional[str] = None) -> None:
+    if scenario.extra_flows_csv is None:
+        _banner("STAGE 3", "bundle-add-flow --from-csv  (skipped: scenario has no extra CSV)")
+        print(
+            "[STAGE 3] Skipping bundle-add-flow: this scenario relies entirely on "
+            f"STAGE 4's recipe ({scenario.recipe_name}) for flow generation."
+        )
+        return
     _banner("STAGE 3", f"bundle-add-flow --from-csv  ({scenario.extra_flows_csv.name})")
     with tempfile.TemporaryDirectory(prefix="dab_demo_csv_") as tmp:
         csv_path = _materialize_csv(
             scenario, uc_catalog_name, Path(tmp),
             demo_data_volume_path=demo_data_volume_path,
+            uc_source_catalog=uc_source_catalog,
+            uc_source_schema=uc_source_schema,
         )
         flows = _flows_from_csv(csv_path)
     rc = bundle_add_flow(BundleAddFlowCommand(
@@ -736,7 +1063,11 @@ def stage_add_flow(scenario: Scenario, bundle_dir: Path, uc_catalog_name: str,
 
 
 def stage_recipe(scenario: Scenario, bundle_dir: Path, *, apply_recipe: bool,
-                 uc_catalog_name: str, profile: Optional[str]) -> None:
+                 uc_catalog_name: str, profile: Optional[str],
+                 uc_source_catalog: Optional[str] = None,
+                 uc_source_schema: Optional[str] = None,
+                 create_missing_uc: bool = True,
+                 demo_data_volume_path: Optional[str] = None) -> None:
     _banner("STAGE 4", f"recipes/{scenario.recipe_name}  ({'apply' if apply_recipe else 'dry-run'})")
     if scenario.recipe_requires_workspace and not apply_recipe:
         print(
@@ -747,8 +1078,22 @@ def stage_recipe(scenario: Scenario, bundle_dir: Path, *, apply_recipe: bool,
         return
     if scenario.name in _CLOUDFILES_SCENARIO_NAMES:
         _seed_demo_landing(bundle_dir)
+    if scenario.name in _DELTA_SCENARIO_NAMES:
+        # Resolve effective source coords the same way `_run_recipe` does so
+        # the seeded schema and the recipe's `--source-schema` always agree.
+        effective_source_catalog = uc_source_catalog or uc_catalog_name
+        effective_source_schema = uc_source_schema or "staging"
+        _seed_demo_delta_source(
+            profile=profile,
+            uc_catalog=effective_source_catalog,
+            uc_schema=effective_source_schema,
+            create_if_missing=create_missing_uc,
+            demo_data_volume_path=demo_data_volume_path,
+        )
     rc = _run_recipe(scenario, bundle_dir, apply=apply_recipe,
-                     uc_catalog_name=uc_catalog_name, profile=profile)
+                     uc_catalog_name=uc_catalog_name, profile=profile,
+                     uc_source_catalog=uc_source_catalog,
+                     uc_source_schema=uc_source_schema)
     if rc != 0:
         # Recipe dry-run prints the proposed plan with rc=0; non-zero means a
         # real failure (eg. duplicate id, validation error).
@@ -1415,6 +1760,18 @@ def main() -> int:
                              "bundle-prepare-wheel. Default: create them if they "
                              "don't exist (catalogs are never auto-created).")
     parser.set_defaults(create_missing_uc=True)
+    parser.add_argument("--uc-source-catalog", default=None,
+                        help="UC catalog containing the upstream Delta tables that "
+                             "the `delta` scenario's recipes/from_uc.py mirrors "
+                             "into the bundle. Defaults to --uc-catalog-name when "
+                             "omitted (i.e. source and target live in the same "
+                             "catalog). Only used by scenarios whose recipe "
+                             "references {uc_source_catalog}.")
+    parser.add_argument("--uc-source-schema", default=None,
+                        help="UC schema (inside --uc-source-catalog) containing "
+                             "the upstream Delta tables for the `delta` scenario. "
+                             "Defaults to 'staging'. Only used by scenarios whose "
+                             "recipe references {uc_source_schema}.")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir).resolve()
@@ -1447,12 +1804,18 @@ def main() -> int:
             stage_add_flow(
                 scenario, bundle_dir, args.uc_catalog_name,
                 demo_data_volume_path=demo_data_volume_path,
+                uc_source_catalog=args.uc_source_catalog,
+                uc_source_schema=args.uc_source_schema,
             )
             stage_recipe(
                 scenario, bundle_dir,
                 apply_recipe=args.apply_recipe,
                 uc_catalog_name=args.uc_catalog_name,
                 profile=args.profile,
+                uc_source_catalog=args.uc_source_catalog,
+                uc_source_schema=args.uc_source_schema,
+                create_missing_uc=args.create_missing_uc,
+                demo_data_volume_path=demo_data_volume_path,
             )
             stage_validate(bundle_dir, args.profile)
             if args.apply_deploy:

@@ -364,7 +364,7 @@ Useful flags:
 - `--refresh-all` — full refresh (wipes + reloads all tables)
 - `--no-wait` — fire-and-return; watch in the UI
 
-### Option 2: direct LDP API (no DAB)
+### Option 2: direct SDP API (no DAB)
 
 If you've already deployed and just want to retrigger an update:
 

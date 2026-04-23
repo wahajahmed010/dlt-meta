@@ -44,10 +44,14 @@ def _load_schema() -> dict:
 
 
 def _materialize_csv_text(csv_path: Path, catalog: str = "main",
-                          demo_data_volume_path: str = "/Volumes/main/demo/wheels/demo_data") -> str:
+                          demo_data_volume_path: str = "/Volumes/main/demo/wheels/demo_data",
+                          uc_source_catalog: str = "main",
+                          uc_source_schema: str = "staging") -> str:
     return (
         csv_path.read_text()
         .replace("{uc_catalog_name}", catalog)
+        .replace("{uc_source_catalog}", uc_source_catalog)
+        .replace("{uc_source_schema}", uc_source_schema)
         .replace("{demo_data_volume_path}", demo_data_volume_path)
     )
 
@@ -208,19 +212,47 @@ class FlowCsvTests(unittest.TestCase):
             self.assertEqual({f.source_format for f in flows}, {"eventhub"})
 
     def test_delta_extra(self):
+        # delta_extra.csv ships exactly the 4 tables the launcher's
+        # `_seed_demo_delta_source` materializes from demo/resources/data/
+        # (customers/transactions/stores/products). Keeping the CSV row
+        # count and the seeder's `_DELTA_SOURCE_SEEDS` dict in lock-step
+        # is enforced here so a future divergence -- which would deploy
+        # flows pointing at non-existent source tables -- fails fast in CI.
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             csv_path = self._load_csv_into_tmp("delta_extra.csv", tmp)
             flows = self._flows_from_csv(csv_path)
-            self.assertEqual(len(flows), 5)
+            self.assertEqual(len(flows), 4)
             self.assertEqual({f.source_format for f in flows}, {"delta"})
+            tables = {f.bronze_table for f in flows}
+            self.assertEqual(tables, {"customers", "transactions", "stores", "products"})
             for f in flows:
-                self.assertTrue(f.source_database.startswith("main."),
-                                f"unexpected source_database: {f.source_database}")
+                # Defaults: --uc-source-catalog falls back to --uc-catalog-name
+                # ("main" in tests) and --uc-source-schema defaults to "staging".
                 self.assertEqual(f.source_database, "main.staging")
                 self.assertTrue(f.source_table)
                 self.assertEqual(f.bronze_table, f.silver_table)
+
+    def test_delta_extra_with_overridden_source_schema(self):
+        """When --uc-source-catalog/--uc-source-schema are passed, the
+        rendered CSV must reflect them so STAGE 3's onboarding entries
+        agree with STAGE 4's recipe args (and the source tables seeded
+        by `_seed_demo_delta_source`)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            src = DEMO_DIR / "flows" / "delta_extra.csv"
+            rendered = tmp / "delta_extra.csv"
+            rendered.write_text(_materialize_csv_text(
+                src,
+                uc_source_catalog="my_catalog",
+                uc_source_schema="my_source_schema",
+            ))
+            flows = self._flows_from_csv(rendered)
+            for f in flows:
+                self.assertEqual(f.source_database, "my_catalog.my_source_schema")
+                self.assertEqual(f.source_system, "my_source_schema")
 
     def test_all_csvs_have_consistent_columns(self):
         """Every CSV must declare its columns in the header row."""
@@ -336,8 +368,9 @@ class LauncherRegistryTests(unittest.TestCase):
         for name, scenario in self.module.SCENARIOS.items():
             self.assertTrue(scenario.answers_file.is_file(),
                             f"{name}: answers_file missing -> {scenario.answers_file}")
-            self.assertTrue(scenario.extra_flows_csv.is_file(),
-                            f"{name}: extra_flows_csv missing -> {scenario.extra_flows_csv}")
+            if scenario.extra_flows_csv is not None:
+                self.assertTrue(scenario.extra_flows_csv.is_file(),
+                                f"{name}: extra_flows_csv missing -> {scenario.extra_flows_csv}")
 
     def test_topic_files_referenced_by_topics_recipes_exist(self):
         for name in ("kafka", "eventhub"):
