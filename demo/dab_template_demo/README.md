@@ -66,7 +66,7 @@ Declarative Pipelines (LDP) are rendered when `layer=bronze_silver`:
 | `pipeline_mode` | LDP pipelines rendered in `resources/sdp_meta_pipelines.yml` | Runner notebook call |
 |---|---|---|
 | `split` | TWO pipelines: `bronze` and `silver`. The `pipelines` job runs `silver` after `bronze` (`depends_on`). | per-pipeline: `invoke_dlt_pipeline(spark, "bronze")` and `invoke_dlt_pipeline(spark, "silver")` |
-| `combined` | ONE pipeline: `bronze_silver`, with both `bronze.dataflowspecTable` and `silver.dataflowspecTable` in `configuration`. | `invoke_dlt_pipeline(spark, "bronze_silver")` — registers both layers' `@dlt.table` decorators in a single graph |
+| `combined` | ONE pipeline: `bronze_silver`, with both `bronze.dataflowspecTable` and `silver.dataflowspecTable` in `configuration`. | `invoke_dlt_pipeline(spark, "bronze_silver")` — registers both layers' `@dp.table` decorators in a single graph |
 
 `pipeline_mode` is **only** consulted when `layer=bronze_silver`; with
 `layer=bronze` or `layer=silver` there's only ever one pipeline by
