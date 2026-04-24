@@ -21,9 +21,9 @@ DLT-META needs following metadata files:
 DLT-META translates input metadata into Delta table as DataflowSpecs
 
 
-**Q. How many Lakeflow Declarative Pipelines will be launched using DLT-META?**
+**Q. How many Lakeflow Spark Declarative Pipelines will be launched using DLT-META?**
 
-DLT-META uses data_flow_group to launch Lakeflow Declarative Pipelines, so all the tables belongs to same group will be executed under single Lakeflow Declarative pipeline. 
+DLT-META uses data_flow_group to launch Lakeflow Spark Declarative Pipelines, so all the tables belongs to same group will be executed under single Lakeflow Declarative pipeline. 
 
 **Q. Can we run onboarding for bronze layer only?**
 

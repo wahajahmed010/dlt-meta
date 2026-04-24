@@ -9,7 +9,7 @@ draft: false
 
 **Q1. Do I need to run an initial setup before using the DLT-META App?**
 
-Yes. Before using the DLT-META App, you must click the Setup button to create the required dlt-meta environment. This initializes the app and enables you to onboard or manage Lakeflow Declarative Pipelines.
+Yes. Before using the DLT-META App, you must click the Setup button to create the required dlt-meta environment. This initializes the app and enables you to onboard or manage Lakeflow Spark Declarative Pipelines.
 
 ### Features and Capabilities
 

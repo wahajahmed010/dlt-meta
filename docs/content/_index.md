@@ -7,11 +7,11 @@ draft: false
 
 
 ## Project Overview
-`DLT-META` is a metadata-driven framework designed to work with [Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines). This framework enables the automation of bronze and silver data pipelines by leveraging metadata recorded in an onboarding JSON file. This file, known as the Dataflowspec, serves as the data flow specification, detailing the source and target metadata required for the pipelines.
+`DLT-META` is a metadata-driven framework designed to work with [Lakeflow Spark Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines). This framework enables the automation of bronze and silver data pipelines by leveraging metadata recorded in an onboarding JSON file. This file, known as the Dataflowspec, serves as the data flow specification, detailing the source and target metadata required for the pipelines.
 
 In practice, a single generic pipeline reads the Dataflowspec and uses it to orchestrate and run the necessary data processing workloads. This approach streamlines the development and management of data pipelines, allowing for a more efficient and scalable data processing workflow
 
-[Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) and `DLT-META`  are designed to complement each other.  [Lakeflow Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) provide a declarative, intent-driven foundation for building and managing data workflows, while DLT-META adds a powerful configuration-driven layer that automates and scales pipeline creation. By combining these approaches, teams can move beyond manual coding to achieve true enterprise-level agility, governance, and efficiency, templatizing and automating pipelines for any scale of modern data-driven business
+[Lakeflow Spark Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) and `DLT-META`  are designed to complement each other.  [Lakeflow Spark Declarative Pipelines](https://www.databricks.com/product/data-engineering/lakeflow-declarative-pipelines) provide a declarative, intent-driven foundation for building and managing data workflows, while DLT-META adds a powerful configuration-driven layer that automates and scales pipeline creation. By combining these approaches, teams can move beyond manual coding to achieve true enterprise-level agility, governance, and efficiency, templatizing and automating pipelines for any scale of modern data-driven business
 
 
 
@@ -24,10 +24,10 @@ In practice, a single generic pipeline reads the Dataflowspec and uses it to orc
 
 #### Generic Lakeflow Declarative pipeline
 - Apply appropriate readers based on input metadata
-- Apply data quality rules with Lakeflow Declarative Pipelines expectations 
+- Apply data quality rules with Lakeflow Spark Declarative Pipelines expectations 
 - Apply CDC apply changes if specified in metadata
-- Builds Lakeflow Declarative Pipelines graph based on input/output metadata
-- Launch Lakeflow Declarative Pipelines pipeline
+- Builds Lakeflow Spark Declarative Pipelines graph based on input/output metadata
+- Launch Lakeflow Spark Declarative Pipelines pipeline
 
 ## High-Level Solution overview:
 ![High-Level Process Flow](/images/solutions_overview.png)
@@ -44,7 +44,7 @@ In practice, a single generic pipeline reads the Dataflowspec and uses it to orc
     - Option#1: [DLT-META CLI](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_cli/#dataflow-dlt-pipeline)
     - Option#2: [DLT-META MANUAL](https://databrickslabs.github.io/dlt-meta/getting_started/dltmeta_manual/#dataflow-dlt-pipeline)
 
-## DLT-META `Lakeflow Declarative Pipelines` Features support
+## DLT-META `Lakeflow Spark Declarative Pipelines` Features support
 | Features  | DLT-META Support |
 | ------------- | ------------- |
 | Input data sources  | Autoloader, Delta, Eventhub, Kafka, snapshot  |
@@ -63,8 +63,8 @@ In practice, a single generic pipeline reads the Dataflowspec and uses it to orc
 | [DLT-META UI](https://github.com/databrickslabs/dlt-meta/tree/main/lakehouse_app#dlt-meta-lakehouse-app-setup) | Uses Databricks Lakehouse DLT-META App
 
 ## How much does it cost ?
-DLT-META does not have any **direct cost** associated with it other than the cost to run the Databricks Lakeflow Declarative Pipelines 
-on your environment.The overall cost will be determined primarily by the [Databricks Lakeflow Declarative Pipelines Pricing] (https://www.databricks.com/product/pricing/lakeflow-declarative-pipelines)
+DLT-META does not have any **direct cost** associated with it other than the cost to run the Databricks Lakeflow Spark Declarative Pipelines 
+on your environment.The overall cost will be determined primarily by the [Databricks Lakeflow Spark Declarative Pipelines Pricing] (https://www.databricks.com/product/pricing/lakeflow-declarative-pipelines)
 
 
 ## More questions

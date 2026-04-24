@@ -5,7 +5,7 @@
  4. [Append FLOW Eventhub Demo](#append-flow-eventhub-demo): Write to same target from multiple sources using [dlt.append_flow](https://docs.databricks.com/en/delta-live-tables/flows.html#append-flows)  and adding [File metadata column](https://docs.databricks.com/en/ingestion/file-metadata-column.html)
  5. [Silver Fanout Demo](#silver-fanout-demo): This demo showcases the implementation of fanout architecture in the silver layer.
  6. [Apply Changes From Snapshot Demo](#apply-changes-from-snapshot-demo): This demo showcases the implementation of ingesting from snapshots in bronze layer
- 7. [Lakeflow Declarative Pipelines Sink Demo](#lakeflow-declarative-pipelines-sink-demo): This demo showcases the implementation of write to external sinks like delta and kafka
+ 7. [Lakeflow Spark Declarative Pipelines Sink Demo](#lakeflow-spark-declarative-pipelines-sink-demo): This demo showcases the implementation of write to external sinks like delta and kafka
  8. [DAB Demo](#dab-demo): This demo showcases how to use Databricks Assets Bundles with dlt-meta
 
 
@@ -298,12 +298,12 @@ This demo will perform following tasks:
     ```
     ![acfs.png](../docs/static/images/acfs.png)
 
-# Lakeflow Declarative Pipelines Sink Demo
+# Lakeflow Spark Declarative Pipelines Sink Demo
   - This demo will perform following steps
     - Showcase onboarding process for dlt writing to external sink pattern
     - Run onboarding for the bronze iot events.
     - Publish test events to kafka topic
-    - Run Bronze Lakeflow Declarative Pipelines which will read from kafka source topic and write to
+    - Run Bronze Lakeflow Spark Declarative Pipelines which will read from kafka source topic and write to
         - events delta table into uc
         - create quarantine table as per data quality expectations
         - writes to external kafka topics
