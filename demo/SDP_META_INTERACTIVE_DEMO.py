@@ -146,10 +146,10 @@ dbutils.library.restartPython()
 # MAGIC - Silver transformations (column selection, expressions)
 # MAGIC - Adding new feeds without modifying the pipeline
 # MAGIC - Incremental processing
-# MAGIC - **Append Flow** — `dlt.append_flow` for multi-source → same target
+# MAGIC - **Append Flow** — `dp.append_flow` for multi-source → same target
 # MAGIC - **File Metadata** — `_metadata.file_name`, `_metadata.file_path`
 # MAGIC - **Apply Changes From Snapshot** — snapshot-based SCD Type 1 & 2
-# MAGIC - **DLT Sink** — `dlt.create_sink` to write to external delta
+# MAGIC - **Pipeline Sink** — `dp.create_sink` to write to external delta
 
 # COMMAND ----------
 
@@ -927,7 +927,7 @@ print("Quarantine tables will capture these records.")
 # MAGIC ### 1.6 Create Append Flow Data
 # MAGIC
 # MAGIC Append Flow reads from **multiple source paths** and writes to the
-# MAGIC **same target table** using `dlt.append_flow`.
+# MAGIC **same target table** using `dp.append_flow`.
 # MAGIC We create two separate source directories for orders.
 # MAGIC See: [cloudfiles-onboarding.template](https://github.com/databrickslabs/dlt-meta/blob/main/demo/conf/json/cloudfiles-onboarding.template)
 
@@ -1468,9 +1468,10 @@ else:
     created = w.pipelines.create(
         name=pipeline_name,
         catalog=uc_catalog_name,
-        # DLT direct publishing mode requires a pipeline-level target schema.
-        # DataflowPipeline sets catalog+schema on every @dlt.table() call
-        # from DataflowSpec (bronze_database_prod / silver_database_prod),
+        # Spark Declarative Pipelines direct publishing mode requires
+        # a pipeline-level target schema. DataflowPipeline sets
+        # catalog+schema on every @dp.table() call from DataflowSpec
+        # (bronze_database_prod / silver_database_prod),
         # so this target is never used for actual routing.
         # A dedicated placeholder schema is used to keep it separate from
         # the DataflowSpec metadata schema and the Bronze/Silver data schemas.
@@ -1482,6 +1483,7 @@ else:
         ],
         configuration=pipeline_config,
         development=True,
+        serverless=True
     )
     pipeline_id = created.pipeline_id
     print(f"Pipeline created: {pipeline_id}")
@@ -2157,7 +2159,7 @@ display(spark.sql(f"""
 # MAGIC ## Stage 8: Append Flow — Multi-Source Ingestion
 # MAGIC
 # MAGIC **Append Flow** reads from **multiple source paths** and writes to the
-# MAGIC **same target table** using `dlt.append_flow`. This enables:
+# MAGIC **same target table** using `dp.append_flow`. This enables:
 # MAGIC - Consolidating data from multiple upstream systems
 # MAGIC - Adding **file metadata columns** (file name, file path)
 # MAGIC - Gradually adding new data feeds without schema changes
@@ -2181,7 +2183,7 @@ display(spark.sql(f"""
 # MAGIC ### 8.1 Append Flow Onboarding
 # MAGIC
 # MAGIC The `bronze_append_flows` list defines additional sources that
-# MAGIC feed into the same bronze target using `dlt.append_flow`.
+# MAGIC feed into the same bronze target using `dp.append_flow`.
 # MAGIC `source_metadata` adds file name/path to each record.
 
 # COMMAND ----------
@@ -2643,6 +2645,7 @@ else:
         ],
         configuration=snapshot_pipeline_config,
         development=True,
+        serverless=True
     )
     snapshot_pipeline_id = created_snap.pipeline_id
     print(f"Snapshot pipeline created: {snapshot_pipeline_id}")
@@ -2793,10 +2796,10 @@ display(spark.sql(f"""
 
 # MAGIC %md
 # MAGIC ---
-# MAGIC ## Stage 10: DLT Sink — Write to External Delta
+# MAGIC ## Stage 10: Pipeline Sink — Write to External Delta
 # MAGIC
-# MAGIC **DLT Sink** writes pipeline output to **external destinations**
-# MAGIC (delta, kafka) using `dlt.create_sink` + `dlt.append_flow`.
+# MAGIC **Pipeline Sink** writes pipeline output to **external destinations**
+# MAGIC (delta, kafka) using `dp.create_sink` + `dp.append_flow`.
 # MAGIC This stage demonstrates writing IoT events to an external
 # MAGIC delta table location.
 # MAGIC
@@ -2807,7 +2810,7 @@ display(spark.sql(f"""
 # MAGIC   │         │
 # MAGIC   │         ├── DQE (expect_or_drop / quarantine)
 # MAGIC   │         │
-# MAGIC   │         └── Sink: dlt.create_sink(format="delta")
+# MAGIC   │         └── Sink: dp.create_sink(format="delta")
 # MAGIC   │                   writes to external Volume path
 # MAGIC   │
 # MAGIC   └─── Quarantine Table (iot_events_quarantine)
@@ -3078,10 +3081,10 @@ display(spark.createDataFrame(summary_rows))
 # MAGIC | **Silver transformations** | Column selection and expressions via JSON |
 # MAGIC | **Adding new feeds** | Products & Stores added — no pipeline changes |
 # MAGIC | **Incremental processing** | CDC data (I/U/D) processed automatically |
-# MAGIC | **Append Flow** | Multi-source → same target via `dlt.append_flow` |
+# MAGIC | **Append Flow** | Multi-source → same target via `dp.append_flow` |
 # MAGIC | **File metadata** | `_metadata.file_name`, `_metadata.file_path` |
 # MAGIC | **Apply Changes From Snapshot** | Snapshot-based SCD Type 1 & 2 |
-# MAGIC | **DLT Sink** | Write to external delta table via `dlt.create_sink` |
+# MAGIC | **Pipeline Sink** | Write to external delta table via `dp.create_sink` |
 # MAGIC
 # MAGIC ### Learn More
 # MAGIC - [Full Documentation](https://databrickslabs.github.io/dlt-meta/)

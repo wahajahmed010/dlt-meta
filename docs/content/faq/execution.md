@@ -107,7 +107,7 @@ When you launch Lakeflow Declarative Pipeline it will read silver onboarding and
 
 **Q. How can I do type1 or type2 merge to target table?**
 
-- Using Lakeflow Declarative Pipeline's [dlt.create_auto_cdc_flow](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-apply-changes) we can do type1 or type2 merge.
+- Using Lakeflow Declarative Pipeline's [dp.create_auto_cdc_flow](https://docs.databricks.com/aws/en/ldp/developer/ldp-python-ref-apply-changes) we can do type1 or type2 merge.
 - SDP-META have tag in onboarding file as `bronze_cdc_apply_changes` or `silver_cdc_apply_changes` which maps to Lakeflow Declarative Pipeline's create_auto_cdc_flow API.
 ```
 "silver_cdc_apply_changes": {
@@ -127,9 +127,9 @@ When you launch Lakeflow Declarative Pipeline it will read silver onboarding and
 
 **Q. How can I write to same target table using different sources?**
 
-- Using Lakeflow Declarative Pipeline's [dlt.append_flow API](https://docs.databricks.com/aws/en/dlt-ref/dlt-python-ref-append-flow) we can write to same target from different sources. 
+- Using Lakeflow Declarative Pipeline's [dp.append_flow API](https://docs.databricks.com/aws/en/ldp/developer/ldp-python-ref-append-flow) we can write to same target from different sources. 
 - SDP-META have tag in onboarding file as [bronze_append_flows](https://github.com/databrickslabs/sdp-meta/blob/main/integration_tests/conf/cloudfiles-onboarding.template#L41) and [silver_append_flows](https://github.com/databrickslabs/sdp-meta/blob/main/integration_tests/conf/cloudfiles-onboarding.template#L67) 
-dlt.append_flow API is mapped to 
+dp.append_flow API is mapped to 
 ```json 
 [
    {
@@ -188,5 +188,5 @@ This failure happens because the pipeline was created using Legacy Publishing mo
 com.databricks.pipelines.common.errors.DLTAnalysisException: Materializing tables in custom schemas is not supported. Please remove the database qualifier from table 'catalog_name.schema_name.table_name'
 ``
 
-To resolve this, migrate the pipeline to the default (Databricks Publishing Mode) by following Databricks’ guide: [Migrate to the default publishing mode](https://docs.databricks.com/aws/en/dlt/migrate-to-dpm#migrate-to-the-default-publishing-mode). 
+To resolve this, migrate the pipeline to the default (Databricks Publishing Mode) by following Databricks’ guide: [Migrate to the default publishing mode](https://docs.databricks.com/aws/en/ldp/migrate-to-dpm#migrate-to-the-default-publishing-mode). 
 
